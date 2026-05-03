@@ -10,10 +10,15 @@ interface OcoyaWorkspace {
   name: string | null;
 }
 
+interface ConfiguredWorkspace {
+  name: string;
+  id: string;
+}
+
 interface FetchSuccess {
   ok: true;
   workspaces: OcoyaWorkspace[];
-  currentEnvWorkspaceId: string | null;
+  configured: ConfiguredWorkspace[];
 }
 
 interface FetchFailure {
@@ -73,16 +78,22 @@ export function OcoyaWorkspaceFetcher() {
     >
       <header className="space-y-1">
         <h2 id="ocoya-workspace-heading" className="text-base font-medium">
-          Ocoya workspace ID
+          Ocoya workspaces
         </h2>
         <p className="text-sm text-slate-600 dark:text-slate-400">
           Fetches the list of workspaces from the Ocoya API using the
           server-side <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-xs">OCOYA_API_KEY</code>.
-          Copy the ID for the workspace where outbox should publish, then save
-          it as <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-xs">OCOYA_WORKSPACE_ID</code>{" "}
-          in <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-xs">.env.local</code>{" "}
-          and Vercel (Production + Preview + local).
+          Copy each workspace ID you want outbox to publish into, then save
+          them as a JSON array in{" "}
+          <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-xs">OCOYA_WORKSPACE_IDS</code>{" "}
+          (Production + Preview + local). Format:
         </p>
+        <pre className="mt-2 overflow-x-auto rounded bg-slate-100 dark:bg-slate-800 p-2 text-[11px] leading-relaxed">
+{`OCOYA_WORKSPACE_IDS='[
+  {"name":"WitUS Main","id":"abc123"},
+  {"name":"Tour","id":"def456"}
+]'`}
+        </pre>
       </header>
 
       <Button
@@ -118,9 +129,7 @@ export function OcoyaWorkspaceFetcher() {
         ) : (
           <ul className="space-y-2">
             {data.workspaces.map((w) => {
-              const isCurrent =
-                data.currentEnvWorkspaceId !== null &&
-                data.currentEnvWorkspaceId === w.id;
+              const configured = data.configured.find((c) => c.id === w.id);
               return (
                 <li
                   key={w.id}
@@ -130,8 +139,10 @@ export function OcoyaWorkspaceFetcher() {
                     <span className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">
                       {w.name ?? "(unnamed workspace)"}
                     </span>
-                    {isCurrent ? (
-                      <Badge tone="emerald">Current env value</Badge>
+                    {configured ? (
+                      <Badge tone="emerald">
+                        Configured as &ldquo;{configured.name}&rdquo;
+                      </Badge>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -166,14 +177,24 @@ export function OcoyaWorkspaceFetcher() {
         )
       ) : null}
 
-      {data?.currentEnvWorkspaceId ? (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Current{" "}
-          <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-[11px]">
-            OCOYA_WORKSPACE_ID
-          </code>
-          : <code className="font-mono text-[11px]">{data.currentEnvWorkspaceId}</code>
-        </p>
+      {data && data.configured.length > 0 ? (
+        <div className="rounded-md border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-950 p-3 space-y-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            Currently configured (OCOYA_WORKSPACE_IDS)
+          </p>
+          <ul className="space-y-1 text-xs">
+            {data.configured.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-medium text-slate-900 dark:text-slate-50">
+                  {c.name}
+                </span>
+                <code className="font-mono break-all text-slate-600 dark:text-slate-400">
+                  {c.id}
+                </code>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
     </section>
   );

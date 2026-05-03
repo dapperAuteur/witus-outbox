@@ -7,7 +7,7 @@ async function loadAdapter(envOverrides: Record<string, string | undefined>) {
   vi.resetModules();
   process.env = { ...ENV_SNAPSHOT };
   delete process.env.OCOYA_API_KEY;
-  delete process.env.OCOYA_WORKSPACE_ID;
+  delete process.env.OCOYA_WORKSPACE_IDS;
   delete process.env.VERCEL_ENV;
   process.env.STORAGE_DATABASE_URL =
     process.env.STORAGE_DATABASE_URL ??

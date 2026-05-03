@@ -34,6 +34,7 @@ export const scheduledPosts = pgTable(
     scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
     status: scheduledPostStatus("status").notNull().default("queued"),
     publisherBackend: text("publisher_backend").notNull(),
+    publisherWorkspaceId: text("publisher_workspace_id"),
     publisherPostId: text("publisher_post_id"),
     publisherErrorDetail: jsonb("publisher_error_detail"),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),

@@ -96,11 +96,32 @@ export async function GET(): Promise<NextResponse> {
     })
     .filter((w): w is OcoyaWorkspace => w !== null);
 
-  const currentEnvWorkspaceId = env.OCOYA_WORKSPACE_ID ?? null;
+  // Echo the configured OCOYA_WORKSPACE_IDS map so the UI can highlight
+  // which workspaces are already wired up.
+  const configured: Array<{ name: string; id: string }> = [];
+  if (env.OCOYA_WORKSPACE_IDS) {
+    try {
+      const parsed = JSON.parse(env.OCOYA_WORKSPACE_IDS);
+      if (Array.isArray(parsed)) {
+        for (const entry of parsed) {
+          if (
+            entry &&
+            typeof entry === "object" &&
+            typeof entry.name === "string" &&
+            typeof entry.id === "string"
+          ) {
+            configured.push({ name: entry.name, id: entry.id });
+          }
+        }
+      }
+    } catch {
+      /* ignore — env.ts already logs malformed JSON via lib/workspaces */
+    }
+  }
 
   return NextResponse.json({
     ok: true,
     workspaces,
-    currentEnvWorkspaceId,
+    configured,
   });
 }
