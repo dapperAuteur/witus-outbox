@@ -21,6 +21,12 @@ export interface PostInput {
   mediaUrls: string[];
   socialProfileIds: string[];
   scheduledAt: Date;
+  /**
+   * Workspace ID this post should be created in. When omitted, the adapter
+   * falls back to its first configured workspace. Required for any account
+   * with more than one workspace.
+   */
+  workspaceId?: string;
 }
 
 export type CreatePostResult =
@@ -47,7 +53,12 @@ export interface PublisherAdapter {
   /** True when real credentials are present and this adapter will hit the network. */
   readonly isLive: boolean;
 
-  listProfiles(): Promise<PublisherSocialProfile[]>;
+  /**
+   * List social profiles for a given workspace, or for the adapter's default
+   * workspace when omitted. Multi-workspace callers (e.g. the reconciler)
+   * iterate configured workspaces and call this per workspace.
+   */
+  listProfiles(workspaceId?: string): Promise<PublisherSocialProfile[]>;
 
   createPost(input: PostInput): Promise<CreatePostResult>;
 
@@ -55,7 +66,8 @@ export interface PublisherAdapter {
 
   getPostsByStatus(
     statuses: readonly PublisherTerminalStatus[],
-    page: number
+    page: number,
+    workspaceId?: string
   ): Promise<{ posts: PublisherPostStatus[]; hasMore: boolean }>;
 
   updateScheduledAt(externalId: string, scheduledAt: Date): Promise<void>;

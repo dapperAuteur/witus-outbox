@@ -27,7 +27,10 @@ const EnvSchema = z.object({
   MOBILE_TEXT_ALERTS_RECIPIENTS: z.string().optional(),
   PUBLISHER_BACKEND: z.string().default("ocoya"),
   OCOYA_API_KEY: z.string().optional(),
-  OCOYA_WORKSPACE_ID: z.string().optional(),
+  // JSON array of {name, id} entries. Symbolic name lets INGEST_SOURCES
+  // entries reference workspaces by name even if the underlying Ocoya ID
+  // changes. Parsed by lib/workspaces.ts. See .env.example for shape.
+  OCOYA_WORKSPACE_IDS: z.string().optional(),
 });
 
 type Env = z.infer<typeof EnvSchema>;

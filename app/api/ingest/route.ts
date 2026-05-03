@@ -7,8 +7,10 @@ import { sendOutboxAlert } from "@/lib/alerts";
 import { safeDbWrite } from "@/lib/db-safe";
 import { verifySignature } from "@/lib/hmac";
 import { getSourceSecret } from "@/lib/ingest-sources";
+import { getSourceWorkspaceName } from "@/lib/ingest-workspaces";
 import { getPublisher } from "@/lib/publishers";
 import { PLATFORMS } from "@/lib/publishers/types";
+import { getDefaultWorkspaceId, getWorkspaceIdByName } from "@/lib/workspaces";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,6 +87,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const publisher = getPublisher();
   const scheduledAt = new Date(parsed.data.scheduled_at);
 
+  // Per-source workspace routing: each INGEST_SOURCES entry's optional
+  // `workspace_name` resolves to an OCOYA_WORKSPACE_IDS entry. If unset,
+  // fall back to the first configured workspace.
+  const workspaceName = getSourceWorkspaceName(source);
+  const workspaceId = workspaceName
+    ? getWorkspaceIdByName(workspaceName)
+    : getDefaultWorkspaceId();
+
+  if (workspaceName && !workspaceId) {
+    console.error(
+      "[ingest] source=%s references workspace_name=%s with no matching OCOYA_WORKSPACE_IDS entry",
+      source,
+      workspaceName
+    );
+    return reject(500);
+  }
+
   const existing = await db.query.scheduledPosts.findFirst({
     where: and(
       eq(scheduledPosts.source, source),
@@ -126,6 +145,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           scheduledAt,
           status: "queued",
           publisherBackend: publisher.backend,
+          publisherWorkspaceId: workspaceId,
         })
         .returning({ id: scheduledPosts.id })
   );
@@ -154,6 +174,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       scheduledAt,
       caption: parsed.data.caption,
       mediaUrls: parsed.data.media_urls,
+      workspaceId: workspaceId ?? undefined,
     })
   );
 
@@ -170,17 +191,26 @@ interface SubmitArgs {
   scheduledAt: Date;
   caption: string;
   mediaUrls: string[];
+  workspaceId?: string;
 }
 
 async function submitToPublisher(args: SubmitArgs): Promise<void> {
   const db = getDb();
   const publisher = getPublisher();
 
+  const profileWhere = args.workspaceId
+    ? and(
+        eq(socialProfiles.publisherBackend, publisher.backend),
+        eq(socialProfiles.network, args.platform),
+        eq(socialProfiles.workspaceId, args.workspaceId)
+      )
+    : and(
+        eq(socialProfiles.publisherBackend, publisher.backend),
+        eq(socialProfiles.network, args.platform)
+      );
+
   const profile = await db.query.socialProfiles.findFirst({
-    where: and(
-      eq(socialProfiles.publisherBackend, publisher.backend),
-      eq(socialProfiles.network, args.platform)
-    ),
+    where: profileWhere,
     orderBy: [desc(socialProfiles.lastSyncedAt)],
     columns: { publisherProfileId: true },
   });
@@ -212,6 +242,7 @@ async function submitToPublisher(args: SubmitArgs): Promise<void> {
     mediaUrls: args.mediaUrls,
     socialProfileIds,
     scheduledAt: args.scheduledAt,
+    workspaceId: args.workspaceId,
   });
 
   await db.insert(publishAttempts).values({
