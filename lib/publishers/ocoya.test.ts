@@ -13,6 +13,12 @@ async function loadAdapter(envOverrides: Record<string, string | undefined>) {
     process.env.STORAGE_DATABASE_URL ??
     "postgres://placeholder:placeholder@localhost:5432/placeholder";
   process.env.ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "tools@awews.com";
+  process.env.NEXTAUTH_SECRET =
+    process.env.NEXTAUTH_SECRET ?? "test-secret-at-least-16-chars-long";
+  process.env.EMAIL_SERVER =
+    process.env.EMAIL_SERVER ?? "smtp://placeholder@localhost:25";
+  process.env.EMAIL_FROM =
+    process.env.EMAIL_FROM ?? "Test <test@example.com>";
   process.env.PUBLISHER_BACKEND = "ocoya";
   for (const [k, v] of Object.entries(envOverrides)) {
     if (v === undefined) delete process.env[k];
