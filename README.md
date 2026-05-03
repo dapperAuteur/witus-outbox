@@ -36,3 +36,4 @@ Inbox is *receive-only*; outbox is *send-only*. Mixing the two in one app would 
 ## License
 
 See [LICENSE](LICENSE) when added.
+# witus-outbox
