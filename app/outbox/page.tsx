@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
+import { Settings } from "lucide-react";
 import { and, desc, eq, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { scheduledPosts } from "@/db/schema";
@@ -102,7 +103,16 @@ export default async function OutboxList({
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">Triage</h1>
         </div>
-        <SignOutButton />
+        <div className="flex items-center gap-1">
+          <Link
+            href="/outbox/setup"
+            className="inline-flex items-center gap-1 rounded-md min-h-11 min-w-11 px-3 text-sm font-medium text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <Settings className="size-4" aria-hidden="true" />
+            <span>Setup</span>
+          </Link>
+          <SignOutButton />
+        </div>
       </header>
 
       <nav
