@@ -4,6 +4,12 @@ import { z } from "zod";
 const EnvSchema = z.object({
   STORAGE_DATABASE_URL: z.string().url(),
   ADMIN_EMAIL: z.string().email(),
+  // NextAuth v4 falls back to VERCEL_URL on Vercel preview/prod when this is
+  // unset, and to the request origin in local dev. Set explicitly in
+  // Production.
+  NEXTAUTH_URL: z.string().url().optional(),
+  NEXTAUTH_SECRET: z.string().min(16),
+  EMAIL_SERVER: z.string().min(1),
   EMAIL_FROM: z
     .string()
     .min(3)
@@ -12,8 +18,7 @@ const EnvSchema = z.object({
         /^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(v) ||
         /<[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>\s*$/.test(v),
       'Must be "addr@host" or "Name <addr@host>"'
-    )
-    .optional(),
+    ),
   ALERT_EMAIL: z.string().email().optional(),
   INGEST_SOURCES: z.string().optional(),
   MAILGUN_API_KEY: z.string().optional(),
