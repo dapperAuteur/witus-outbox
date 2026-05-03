@@ -16,5 +16,9 @@ export default withAuth({
 // Authed surfaces only. /api/ingest is HMAC-gated, /api/admin/tick uses a
 // bearer token (Apps Script) so neither belongs here.
 export const config = {
-  matcher: ["/outbox/:path*", "/api/admin/scheduled-posts/:path*"],
+  matcher: [
+    "/outbox/:path*",
+    "/api/admin/scheduled-posts/:path*",
+    "/api/admin/ocoya-workspaces",
+  ],
 };
