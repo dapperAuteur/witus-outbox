@@ -14,11 +14,15 @@ const EnvSchema = z.object({
       'Must be "addr@host" or "Name <addr@host>"'
     )
     .optional(),
+  ALERT_EMAIL: z.string().email().optional(),
   INGEST_SOURCES: z.string().optional(),
   MAILGUN_API_KEY: z.string().optional(),
   MAILGUN_DOMAIN: z.string().optional(),
   MOBILE_TEXT_ALERTS_API_KEY: z.string().optional(),
   MOBILE_TEXT_ALERTS_RECIPIENTS: z.string().optional(),
+  PUBLISHER_BACKEND: z.string().default("ocoya"),
+  OCOYA_API_KEY: z.string().optional(),
+  OCOYA_WORKSPACE_ID: z.string().optional(),
 });
 
 type Env = z.infer<typeof EnvSchema>;
