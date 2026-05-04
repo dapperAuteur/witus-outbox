@@ -184,50 +184,68 @@ export function DefaultProfilesPanel() {
         </p>
       ) : null}
 
-      {data?.workspaces.map((ws) => (
-        <article
-          key={`${ws.backend}|${ws.workspaceId}`}
-          className="rounded-md border border-slate-200 dark:border-slate-700 p-3 space-y-3"
-        >
-          <header className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-medium">
-                {ws.workspaceName ?? "Workspace"}
-              </h3>
-              <Badge
-                tone={ws.backend === data.activeBackend ? "violet" : "muted"}
-              >
-                {ws.backend}
-                {ws.backend === data.activeBackend ? " · active" : ""}
-              </Badge>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-              <code className="font-mono break-all">{ws.workspaceId}</code>
-              {ws.backend === "ocoya" ? (
-                <a
-                  href={`/api/admin/ocoya-profile-debug?workspaceId=${encodeURIComponent(ws.workspaceId)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded underline underline-offset-2 hover:text-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:hover:text-violet-400"
+      {data?.workspaces.map((ws) => {
+        const networkCount = Object.keys(ws.byNetwork).length;
+        const defaultsSetCount = Object.values(ws.byNetwork).filter(
+          (slot) => slot.defaults.length > 0
+        ).length;
+        return (
+          <details
+            key={`${ws.backend}|${ws.workspaceId}`}
+            className="group rounded-md border border-slate-200 dark:border-slate-700"
+          >
+            <summary className="cursor-pointer list-none p-3 min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 rounded-md">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="inline-block size-4 text-slate-400 transition-transform group-open:rotate-90 motion-reduce:transition-none"
                 >
-                  inspect raw response
-                  <span className="sr-only"> (opens in new tab)</span>
-                </a>
-              ) : null}
-              {ws.backend === "socialchamp" ? (
-                <a
-                  href="/api/admin/socialchamp-debug?path=v1/rest/profile"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded underline underline-offset-2 hover:text-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:hover:text-violet-400"
+                  ▶
+                </span>
+                <span className="text-sm font-medium">
+                  {ws.workspaceName ?? "Workspace"}
+                </span>
+                <Badge
+                  tone={ws.backend === data.activeBackend ? "violet" : "muted"}
                 >
-                  inspect raw response
-                  <span className="sr-only"> (opens in new tab)</span>
-                </a>
-              ) : null}
-            </div>
-          </header>
-          <div className="space-y-3">
+                  {ws.backend}
+                  {ws.backend === data.activeBackend ? " · active" : ""}
+                </Badge>
+                <span className="text-xs text-slate-500 dark:text-slate-400 ml-auto">
+                  {networkCount} network{networkCount === 1 ? "" : "s"} ·{" "}
+                  {defaultsSetCount} default
+                  {defaultsSetCount === 1 ? "" : "s"} set
+                </span>
+              </div>
+              <div className="mt-1 ml-6 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                <code className="font-mono break-all">{ws.workspaceId}</code>
+                {ws.backend === "ocoya" ? (
+                  <a
+                    href={`/api/admin/ocoya-profile-debug?workspaceId=${encodeURIComponent(ws.workspaceId)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded underline underline-offset-2 hover:text-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:hover:text-violet-400"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    inspect raw response
+                    <span className="sr-only"> (opens in new tab)</span>
+                  </a>
+                ) : null}
+                {ws.backend === "socialchamp" ? (
+                  <a
+                    href="/api/admin/socialchamp-debug?path=v1/rest/profile"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded underline underline-offset-2 hover:text-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:hover:text-violet-400"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    inspect raw response
+                    <span className="sr-only"> (opens in new tab)</span>
+                  </a>
+                ) : null}
+              </div>
+            </summary>
+            <div className="space-y-3 border-t border-slate-200 dark:border-slate-700 p-3">
             {Object.entries(ws.byNetwork)
               .sort(([a], [b]) => a.localeCompare(b))
               .map(([network, slot]) => {
@@ -315,9 +333,10 @@ export function DefaultProfilesPanel() {
                   </fieldset>
                 );
               })}
-          </div>
-        </article>
-      ))}
+            </div>
+          </details>
+        );
+      })}
     </section>
   );
 }
