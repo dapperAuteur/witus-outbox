@@ -6,7 +6,7 @@ import { getEnv } from "@/lib/env";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const SOCIALCHAMP_BASE = "https://api.socialchamp.com/api/v1";
+const SOCIALCHAMP_BASE = "https://api.socialchamp.com";
 
 /**
  * Admin-gated proxy that forwards a GET to SocialChamp's API and returns
@@ -16,11 +16,11 @@ const SOCIALCHAMP_BASE = "https://api.socialchamp.com/api/v1";
  * (lib/publishers/socialchamp.ts createPost / getPost / etc.).
  *
  * Usage:
- *   GET /api/admin/socialchamp-debug?path=accounts
- *   GET /api/admin/socialchamp-debug?path=posts?status=POSTED
+ *   GET /api/admin/socialchamp-debug?path=v1/rest/profile
+ *   GET /api/admin/socialchamp-debug?path=v1/rest/post/<id>
  *
- * `path` is the portion AFTER /api/v1/. We prepend the base URL ourselves
- * so the operator can't accidentally hit a different host.
+ * `path` is the portion AFTER api.socialchamp.com/. We prepend the host
+ * ourselves so the operator can't accidentally hit a different host.
  *
  * GET-only by design — write methods (POST/DELETE/PATCH) deliberately
  * blocked here. Slice 19b implements those properly inside the adapter
@@ -38,16 +38,25 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       {
         ok: false,
         error: "path query param required",
-        examples: ["?path=accounts", "?path=posts?cursor=…"],
+        examples: [
+          "?path=v1/rest/profile",
+          "?path=v1/rest/post/<id>",
+        ],
       },
       { status: 400 }
     );
   }
 
-  // Disallow control characters or attempts to escape the base URL.
-  if (path.startsWith("/") || path.startsWith("http") || /[\r\n\0]/.test(path)) {
+  // Disallow control characters, leading slashes, or attempts to escape
+  // the base host.
+  if (
+    path.startsWith("/") ||
+    path.startsWith("http") ||
+    path.includes("..") ||
+    /[\r\n\0]/.test(path)
+  ) {
     return NextResponse.json(
-      { ok: false, error: "path must be relative under /api/v1/" },
+      { ok: false, error: "path must be relative under api.socialchamp.com/" },
       { status: 400 }
     );
   }
