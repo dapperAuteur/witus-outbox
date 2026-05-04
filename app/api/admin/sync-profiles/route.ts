@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { getServerSession } from "next-auth";
 import { getAuthOptions } from "@/lib/auth";
+import { describeError } from "@/lib/db-safe";
 import { getEnv } from "@/lib/env";
 import { syncSocialProfiles } from "@/lib/sync-profiles";
 
@@ -42,10 +43,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const result = await syncSocialProfiles();
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
-    const code = err instanceof Error ? err.name : "UnknownError";
-    console.error("[admin/sync-profiles] err=%s", code);
+    const meta = describeError(err);
+    console.error(
+      "[admin/sync-profiles] err=%s code=%s",
+      meta.name,
+      meta.code ?? "?"
+    );
     return NextResponse.json(
-      { ok: false, error: `sync failed: ${code}` },
+      {
+        ok: false,
+        error: `sync failed: ${meta.name}${meta.code ? ` (${meta.code})` : ""}`,
+        sqlstate: meta.code,
+      },
       { status: 500 }
     );
   }

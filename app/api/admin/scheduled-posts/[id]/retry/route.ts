@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { getAuthOptions } from "@/lib/auth";
 import { retryPost } from "@/lib/admin-actions";
+import { describeError } from "@/lib/db-safe";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,6 +22,24 @@ export async function POST(
   if (!UUID_RE.test(id)) {
     return NextResponse.json({ ok: false, error: "invalid_id" }, { status: 400 });
   }
-  const result = await retryPost(id);
-  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+  try {
+    const result = await retryPost(id);
+    return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+  } catch (err) {
+    const meta = describeError(err);
+    console.error(
+      "[admin/scheduled-posts/retry] id=%s err=%s code=%s",
+      id,
+      meta.name,
+      meta.code ?? "?"
+    );
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `${meta.name}${meta.code ? ` (${meta.code})` : ""}`,
+        sqlstate: meta.code,
+      },
+      { status: 503 }
+    );
+  }
 }
