@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { getAuthOptions } from "@/lib/auth";
 import { DefaultProfilesPanel } from "@/components/DefaultProfilesPanel";
 import { OcoyaWorkspaceFetcher } from "@/components/OcoyaWorkspaceFetcher";
+import { RadaarExportButton } from "@/components/RadaarExportButton";
 import { SignOutButton } from "@/components/SignOutButton";
 import { SyncProfilesButton } from "@/components/SyncProfilesButton";
 
@@ -48,6 +49,8 @@ export default async function OutboxSetup() {
       <SyncProfilesButton />
 
       <DefaultProfilesPanel />
+
+      <RadaarExportButton />
     </main>
   );
 }
