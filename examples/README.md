@@ -69,13 +69,46 @@ export async function schedulePostFromMyApp(form: { caption: string; mediaUrl: s
 2. **Don't block the user response.** Outbox runs `after()` to submit to the publisher backend; your side should also be fire-and-forget so the publisher isn't waiting on outbox latency.
 3. **Log only `source`, `platform`, `external_ref`, `http_status`.** Never log captions, media URLs, the secret, or the signature.
 
+## Picking specific profiles per post (optional)
+
+Outbox's default behavior: it picks profiles for you using the receiver-side `default_publisher_profile` config, falling back to any-match. That works for most cases — set the defaults once in `/outbox/setup` and forget.
+
+If your publisher has a UI where the user picks specific accounts per post (e.g. "post to LinkedIn-Personal not LinkedIn-Company"), include the chosen ids in the payload:
+
+```ts
+const result = await sendToOutbox({
+  outboxUrl, sourceSlug, hmacSecret,
+  submission: {
+    external_ref: "ep-12-quote-card",
+    platform: "linkedin",
+    caption: "…",
+    media_urls: [ /* … */ ],
+    scheduled_at: "2026-05-12T14:00:00Z",
+    social_profile_ids: ["60a1e22e356a770e6a115749"],   // ← payload override
+  },
+});
+```
+
+Resolution order on the receiver (top wins):
+
+1. **payload `social_profile_ids`** — what your publisher chose.
+2. **per-row override** — what the operator set later in outbox's detail-page UI.
+3. **workspace default** — what's configured at `/outbox/setup`.
+4. **any-match fallback** — most-recently-synced profile for the (backend, network, workspace).
+5. **none** — row goes to `status=error` with `code=no_social_profile`.
+
+Each id must exist in outbox's `social_profile` cache for the resolved `(publisher_backend, workspace)`. Invalid ids return `400 { error: "unknown_profile_ids", unknown: [...] }` from the receiver — fix the publisher-side selection and retry.
+
+Discover available ids: sign in to outbox as admin → `/outbox/setup` → the **Default profiles** panel lists every cached profile with its id and display name. Workspace configuration in `OCOYA_WORKSPACE_IDS` decides which workspace your slug's posts target (per the slug's `workspace_name` in `INGEST_SOURCES`).
+
 ## What the receiver does
 
 - Verifies the HMAC + 5-minute timestamp window. Rejects 401 on any mismatch.
 - Validates the payload shape with Zod. Rejects 400 on schema failure.
+- When `social_profile_ids` is present, validates each id against the local `social_profile` cache. Rejects 400 with `{error: "unknown_profile_ids", unknown: [...]}` if any are missing.
 - Idempotent on `(source, external_ref)`: a duplicate returns the existing row's id with its current status; no second insert.
-- Inserts the row as `status=queued`, returns 200 with the row id.
-- In `after()`: looks up the matching `social_profile` for `(publisher_backend, network=platform)` and submits to the publisher (Ocoya at v1). On success the row flips to `submitted` with the publisher's external id; on permanent failure it flips to `error` and outbox fires SMS+email alerts.
+- Inserts the row as `status=queued` (storing `social_profile_ids` as the row's `publisher_profile_ids_override`), returns 200 with the row id.
+- In `after()`: resolves profiles via the layered resolver (payload → row override → workspace default → fallback) and submits to the active publisher backend. On success the row flips to `submitted` with the publisher's external id; on permanent failure it flips to `error` and outbox fires SMS+email alerts.
 
 ## Onboarding a new publisher
 
