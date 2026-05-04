@@ -12,6 +12,11 @@ interface PostActionsProps {
   status: ScheduledPostStatus;
   hasPublisherPostId: boolean;
   scheduledAtIso: string;
+  /** The backend that owns this row. Drives which actions are shown — */
+  /** SocialChamp's API doesn't currently expose update/delete/get-by-id, */
+  /** so those buttons would no-op locally. We hide them and tell the */
+  /** operator to act in the publisher's UI instead. */
+  publisherBackend: string;
 }
 
 interface ActionResponse {
@@ -33,12 +38,20 @@ export function PostActions(props: PostActionsProps) {
   );
 
   const isTerminal = TERMINAL.includes(props.status);
+  // SocialChamp's public API only documents createPost — no
+  // get/list/update/delete. Buttons that would silently no-op locally
+  // get hidden so the operator doesn't think they did anything. Operate
+  // on those rows from inside SocialChamp's UI directly.
+  const backendSupportsRemoteOps = props.publisherBackend === "ocoya";
+
   const canRetry =
     !isTerminal && !props.hasPublisherPostId &&
     (props.status === "queued" || props.status === "error");
-  const canCancel = !isTerminal;
-  const canReschedule = !isTerminal && props.status !== "queued";
-  const canReconcile = props.hasPublisherPostId && !isTerminal;
+  const canCancel = !isTerminal && backendSupportsRemoteOps;
+  const canReschedule =
+    !isTerminal && props.status !== "queued" && backendSupportsRemoteOps;
+  const canReconcile =
+    props.hasPublisherPostId && !isTerminal && backendSupportsRemoteOps;
 
   async function call(
     op: string,
@@ -79,8 +92,23 @@ export function PostActions(props: PostActionsProps) {
     );
   }
 
+  const nothingActionable =
+    !canRetry && !canCancel && !canReschedule && !canReconcile;
+
   return (
     <div className="space-y-3">
+      {nothingActionable && !backendSupportsRemoteOps ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-100">
+          The <strong>{props.publisherBackend}</strong> adapter doesn&rsquo;t
+          expose update / delete / get-by-id endpoints in its public API yet.
+          Cancel / Reschedule / Reconcile-now buttons are hidden because they
+          would no-op against the publisher. Operate on this post inside{" "}
+          <strong>{props.publisherBackend}&rsquo;s</strong> own UI to make
+          changes there, then return here and update the local row by hand if
+          needed.
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         {canRetry ? (
           <Button
