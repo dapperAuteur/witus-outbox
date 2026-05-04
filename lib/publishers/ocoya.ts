@@ -99,18 +99,25 @@ const adapter: PublisherAdapter = {
       console.error("[ocoya] listProfiles status=%d", res.status);
       return [];
     }
-    const body = (await res.json()) as Array<{
-      id: string | number;
-      network?: string;
-      displayName?: string;
-      workspaceId?: string | number;
-    }>;
-    return body.map((p) => ({
-      publisherProfileId: String(p.id),
-      network: normalizeOcoyaNetwork(p.network),
-      displayName: p.displayName ?? null,
-      workspaceId: p.workspaceId != null ? String(p.workspaceId) : null,
-    }));
+    const body = (await res.json()) as Array<Record<string, unknown>>;
+    return body
+      .map((p) => {
+        const idRaw = p.id;
+        if (typeof idRaw !== "string" && typeof idRaw !== "number") return null;
+        const network =
+          typeof p.network === "string" ? p.network : null;
+        const workspaceIdRaw = p.workspaceId;
+        return {
+          publisherProfileId: String(idRaw),
+          network: normalizeOcoyaNetwork(network),
+          displayName: pickProfileName(p),
+          workspaceId:
+            typeof workspaceIdRaw === "string" || typeof workspaceIdRaw === "number"
+              ? String(workspaceIdRaw)
+              : null,
+        };
+      })
+      .filter((p): p is PublisherSocialProfile => p !== null);
   },
 
   async createPost(input: PostInput): Promise<CreatePostResult> {
@@ -273,6 +280,48 @@ const adapter: PublisherAdapter = {
     }
   },
 };
+
+/**
+ * Pulls a human-readable display name out of an Ocoya social-profile
+ * entry. The exact field name isn't pinned in the published docs —
+ * different network types may use `displayName`, `name`, `username`,
+ * `handle`, or a nested `account.name`. We try the most common shapes
+ * in order and fall back to null (which surfaces as "(unnamed)" in the
+ * UI). When that happens, use the /api/admin/ocoya-profile-debug
+ * endpoint to inspect the actual response shape and add the missing
+ * field below.
+ */
+function pickProfileName(p: Record<string, unknown>): string | null {
+  const flat = [
+    "displayName",
+    "display_name",
+    "name",
+    "title",
+    "username",
+    "handle",
+    "screenName",
+    "screen_name",
+    "label",
+    "profileName",
+    "profile_name",
+  ];
+  for (const k of flat) {
+    const v = p[k];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  // Nested account / profile objects.
+  for (const wrapper of ["account", "profile", "user"]) {
+    const inner = p[wrapper];
+    if (inner && typeof inner === "object") {
+      const innerObj = inner as Record<string, unknown>;
+      for (const k of flat) {
+        const v = innerObj[k];
+        if (typeof v === "string" && v.length > 0) return v;
+      }
+    }
+  }
+  return null;
+}
 
 /**
  * Maps whatever Ocoya returns in the `network` field to the canonical
