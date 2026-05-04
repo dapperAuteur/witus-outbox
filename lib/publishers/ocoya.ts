@@ -104,8 +104,7 @@ const adapter: PublisherAdapter = {
       .map((p) => {
         const idRaw = p.id;
         if (typeof idRaw !== "string" && typeof idRaw !== "number") return null;
-        const network =
-          typeof p.network === "string" ? p.network : null;
+        const network = pickNetworkField(p);
         const workspaceIdRaw = p.workspaceId;
         return {
           publisherProfileId: String(idRaw),
@@ -280,6 +279,23 @@ const adapter: PublisherAdapter = {
     }
   },
 };
+
+/**
+ * Pulls the network identifier out of an Ocoya social-profile entry.
+ * Ocoya's actual response uses `provider` (verified via
+ * /api/admin/ocoya-profile-debug 2026-05-04). Older docs and other
+ * adapters may use `network`, `platform`, etc. — we try the common
+ * shapes in order so the cache populates correctly regardless. The
+ * value still flows through normalizeOcoyaNetwork() before storage.
+ */
+function pickNetworkField(p: Record<string, unknown>): string | null {
+  const candidates = ["provider", "network", "platform", "service", "type"];
+  for (const k of candidates) {
+    const v = p[k];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return null;
+}
 
 /**
  * Pulls a human-readable display name out of an Ocoya social-profile
