@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { ArrowLeft } from "lucide-react";
 import { getAuthOptions } from "@/lib/auth";
+import { DefaultProfilesPanel } from "@/components/DefaultProfilesPanel";
 import { OcoyaWorkspaceFetcher } from "@/components/OcoyaWorkspaceFetcher";
 import { SignOutButton } from "@/components/SignOutButton";
 import { SyncProfilesButton } from "@/components/SyncProfilesButton";
@@ -45,6 +46,8 @@ export default async function OutboxSetup() {
       <OcoyaWorkspaceFetcher />
 
       <SyncProfilesButton />
+
+      <DefaultProfilesPanel />
     </main>
   );
 }
