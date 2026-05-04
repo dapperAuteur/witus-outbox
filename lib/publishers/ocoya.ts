@@ -96,7 +96,17 @@ const adapter: PublisherAdapter = {
       `/social-profiles?workspaceId=${encodeURIComponent(ctx.workspaceId)}`
     );
     if (!res.ok) {
-      console.error("[ocoya] listProfiles status=%d", res.status);
+      // Read the error detail so the operator can tell apart 401/403 (bad key)
+      // from 5xx (Ocoya outage) from 404 (workspace doesn't exist) etc.
+      // Same pattern createPost uses; previously listProfiles swallowed the
+      // body and dropped the diagnostic on the floor.
+      const detail = await readErrorDetail(res);
+      console.error(
+        "[ocoya] listProfiles status=%d workspace=%s detail=%s",
+        res.status,
+        ctx.workspaceId,
+        detail
+      );
       return [];
     }
     const body = (await res.json()) as Array<Record<string, unknown>>;
