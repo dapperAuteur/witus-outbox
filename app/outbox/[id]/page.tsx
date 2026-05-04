@@ -2,10 +2,11 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { ArrowLeft, ExternalLink } from "lucide-react";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { publishAttempts, scheduledPosts } from "@/db/schema";
+import { publishAttempts, scheduledPosts, socialProfiles } from "@/db/schema";
 import { Badge } from "@/components/ui/badge";
+import { PostActions } from "@/components/PostActions";
 import { StatusBadge, type ScheduledPostStatus } from "@/components/StatusBadge";
 import { SignOutButton } from "@/components/SignOutButton";
 import { getAuthOptions } from "@/lib/auth";
@@ -58,6 +59,28 @@ export default async function OutboxDetail({
     .where(eq(publishAttempts.scheduledPostId, id))
     .orderBy(desc(publishAttempts.attemptedAt))
     .limit(20);
+
+  // Show what profile WOULD be picked at submit time, so the operator can
+  // sanity-check before clicking Retry. Same lookup logic as ingest.
+  const profileWhere = post.publisherWorkspaceId
+    ? and(
+        eq(socialProfiles.publisherBackend, post.publisherBackend),
+        eq(socialProfiles.network, post.platform),
+        eq(socialProfiles.workspaceId, post.publisherWorkspaceId)
+      )
+    : and(
+        eq(socialProfiles.publisherBackend, post.publisherBackend),
+        eq(socialProfiles.network, post.platform)
+      );
+  const resolvedProfile = await db.query.socialProfiles.findFirst({
+    where: profileWhere,
+    orderBy: [desc(socialProfiles.lastSyncedAt)],
+    columns: {
+      publisherProfileId: true,
+      displayName: true,
+      lastSyncedAt: true,
+    },
+  });
 
   const mediaUrls = asStringArray(post.mediaUrls);
   const links = asStringArray(post.links);
@@ -137,7 +160,40 @@ export default async function OutboxDetail({
               <span className="font-mono text-xs break-all">{post.draftId}</span>
             }
           />
+          <DetailItem
+            label="Resolved profile"
+            value={
+              resolvedProfile ? (
+                <span className="text-xs">
+                  {resolvedProfile.displayName ?? "(unnamed)"}
+                  <span className="block font-mono text-[11px] text-slate-500 dark:text-slate-400 break-all">
+                    {resolvedProfile.publisherProfileId}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-xs text-amber-700 dark:text-amber-400">
+                  none — sync profiles or connect this network in the
+                  workspace
+                </span>
+              )
+            }
+          />
         </dl>
+      </section>
+
+      <section
+        aria-labelledby="actions-heading"
+        className="rounded-lg border border-slate-200 bg-white p-5 sm:p-6 dark:border-slate-800 dark:bg-slate-900 space-y-3"
+      >
+        <h2 id="actions-heading" className="text-base font-medium">
+          Actions
+        </h2>
+        <PostActions
+          postId={post.id}
+          status={status}
+          hasPublisherPostId={Boolean(post.publisherPostId)}
+          scheduledAtIso={post.scheduledAt.toISOString()}
+        />
       </section>
 
       <section
@@ -277,10 +333,6 @@ export default async function OutboxDetail({
         )}
       </section>
 
-      <p className="text-xs text-slate-500 dark:text-slate-400">
-        Per-row actions (Retry / Reschedule / Cancel / Reconcile-now) land in
-        the next slice.
-      </p>
     </main>
   );
 }

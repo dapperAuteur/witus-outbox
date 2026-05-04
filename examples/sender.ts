@@ -53,6 +53,15 @@ export interface SendResult {
   status: number;
   /** UUID assigned by the receiver on success. */
   id?: string;
+  /**
+   * Receiver-side row status echoed in the response body. `"queued"` means
+   * the row was freshly created. Any other value (`"submitted"`, `"error"`,
+   * `"posted"`, `"cancelled"`, `"scheduled"`) means an existing row was
+   * matched on `(source, external_ref)` — the POST was idempotent. Callers
+   * can use this to distinguish freshly-created vs duplicate from one HTTP
+   * round trip.
+   */
+  recordStatus?: string;
   /** Raw response body when `ok` is false; useful for logs. */
   detail?: string;
 }
@@ -76,7 +85,7 @@ export async function sendToOutbox(args: SendArgs): Promise<SendResult> {
   });
 
   const text = await res.text();
-  let body: { ok?: boolean; id?: string } = {};
+  let body: { ok?: boolean; id?: string; status?: string } = {};
   try {
     body = JSON.parse(text);
   } catch {
@@ -84,7 +93,12 @@ export async function sendToOutbox(args: SendArgs): Promise<SendResult> {
   }
 
   if (res.ok && body.ok && body.id) {
-    return { ok: true, status: res.status, id: body.id };
+    return {
+      ok: true,
+      status: res.status,
+      id: body.id,
+      recordStatus: body.status,
+    };
   }
   return { ok: false, status: res.status, detail: text };
 }
