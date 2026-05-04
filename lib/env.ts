@@ -31,6 +31,10 @@ const EnvSchema = z.object({
   // entries reference workspaces by name even if the underlying Ocoya ID
   // changes. Parsed by lib/workspaces.ts. See .env.example for shape.
   OCOYA_WORKSPACE_IDS: z.string().optional(),
+  // Bearer token shared between admin CLIs (e.g. scripts/sync-social-profiles.ts)
+  // and the future Apps Script reconciler. Distinct from any publisher's
+  // INGEST_SOURCES secret. ≥32 chars in production.
+  APPS_SCRIPT_TOKEN: z.string().optional(),
 });
 
 type Env = z.infer<typeof EnvSchema>;
