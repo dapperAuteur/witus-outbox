@@ -5,6 +5,7 @@ Local-only CLI utilities. None of these run on Vercel.
 | File | Purpose |
 |---|---|
 | [`import-radaar-csv.ts`](./import-radaar-csv.ts) | Reads the consultant's RADAAR-format CSV, signs each row, and POSTs to outbox `/api/ingest`. Idempotent on `(source, external_ref)` — safe to rerun. |
+| [`sync-social-profiles.ts`](./sync-social-profiles.ts) | Triggers a profile sync from the active publisher backend (Ocoya at v1) into the local `social_profile` table. POSTs to outbox `/api/admin/sync-profiles` with a Bearer token; the publisher API key never touches your laptop. |
 
 ## `import-radaar-csv.ts`
 
@@ -62,7 +63,7 @@ The CSV importer is for **bootstrapping** — seeding outbox from the consultant
 
 You can run both in parallel — they use distinct source slugs (`radaar-csv-import` vs `witus-online`) so they don't collide.
 
-### CSV format expected
+### CSV format expected (importer)
 
 Column order: `date, type, title, caption, medias, links, comments, status`.
 
@@ -72,3 +73,47 @@ Column order: `date, type, title, caption, medias, links, comments, status`.
 - `medias` — single URL or empty.
 - `links` — newline-separated URLs or empty.
 - `type`, `comments`, `status` — ignored by the importer.
+
+---
+
+## `sync-social-profiles.ts`
+
+Populates `social_profile` so the ingest path can resolve `(platform, workspace) → publisher_profile_id` at submit time. Without this, `lib/publishers/ocoya.ts` is "live" (real key) but the social-profile lookup fails for every row → `status='error'` with `code='no_social_profile'`.
+
+The CLI is a thin HTTP wrapper. It POSTs to outbox's `/api/admin/sync-profiles` with a Bearer token. The publisher API key (Ocoya, RADAAR, etc.) **never touches your laptop**.
+
+### One-time wiring
+
+In `.env.local`:
+
+```
+APPS_SCRIPT_TOKEN=<32-byte-hex matching the target outbox's value>
+OUTBOX_INGEST_URL=http://localhost:3000/api/ingest   # used to derive admin URL
+```
+
+For local-loopback runs, set the same `APPS_SCRIPT_TOKEN` in BOTH places (publisher = your shell + receiver = the running outbox's `.env.local`). For prod runs, your laptop's `APPS_SCRIPT_TOKEN` must equal the value set in Vercel Production env.
+
+### Typical runs
+
+```sh
+# Local loopback (server must be running)
+npm run dev               # in another terminal
+npm run sync:profiles
+
+# Against deployed outbox
+npm run sync:profiles -- --url https://outbox.witus.online
+```
+
+### Pre-requisite — connect accounts in Ocoya first
+
+Sync reads from Ocoya. If you haven't connected your social accounts inside an Ocoya workspace, Ocoya returns an empty list and the sync is a no-op. Sequence:
+
+1. Sign in at https://app.ocoya.com/.
+2. For each workspace listed in `OCOYA_WORKSPACE_IDS`: open Workspace → Social profiles, OAuth-connect each network (X, LinkedIn, BlueSky, Facebook, Instagram, etc.).
+3. Then run `npm run sync:profiles`.
+4. Confirm in the output: `profiles_upserted=N` where N matches the number of accounts you connected.
+5. Re-run `npm run import:radaar -- --limit 5` — rows will now flip to `submitted` instead of `error`.
+
+### From the deployed admin UI
+
+The same sync is available as a button at `/outbox/setup` once you're signed in. No CLI required for routine refreshes.

@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { getAuthOptions } from "@/lib/auth";
 import { OcoyaWorkspaceFetcher } from "@/components/OcoyaWorkspaceFetcher";
 import { SignOutButton } from "@/components/SignOutButton";
+import { SyncProfilesButton } from "@/components/SyncProfilesButton";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,8 @@ export default async function OutboxSetup() {
       </div>
 
       <OcoyaWorkspaceFetcher />
+
+      <SyncProfilesButton />
     </main>
   );
 }
