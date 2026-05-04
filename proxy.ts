@@ -22,5 +22,6 @@ export const config = {
     "/api/admin/ocoya-workspaces",
     "/api/admin/ocoya-profile-debug",
     "/api/admin/default-profiles",
+    "/api/admin/export-radaar-csv",
   ],
 };
