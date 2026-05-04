@@ -11,6 +11,7 @@ import { StatusBadge, type ScheduledPostStatus } from "@/components/StatusBadge"
 import { SignOutButton } from "@/components/SignOutButton";
 import { getAuthOptions } from "@/lib/auth";
 import { formatScheduledTime } from "@/lib/format";
+import { platformLabel } from "@/lib/platforms";
 
 export const dynamic = "force-dynamic";
 
@@ -106,7 +107,7 @@ export default async function OutboxDetail({
       <section className="rounded-lg border border-slate-200 bg-white p-5 sm:p-6 dark:border-slate-800 dark:bg-slate-900 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={status} />
-          <Badge tone="slate">{post.platform}</Badge>
+          <Badge tone="slate">{platformLabel(post.platform)}</Badge>
           <Badge tone="muted">{post.source}</Badge>
         </div>
         <dl className="grid grid-cols-1 gap-y-3 sm:grid-cols-2 sm:gap-x-6 text-sm">
