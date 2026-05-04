@@ -25,3 +25,16 @@ export function getPublisherByBackend(backend: string): PublisherAdapter {
   if (backend === "socialchamp") return socialChampAdapter;
   throw new Error(`Unknown publisher backend: ${backend}`);
 }
+
+const ALL_ADAPTERS: PublisherAdapter[] = [ocoyaAdapter, socialChampAdapter];
+
+/**
+ * Returns every adapter that's currently "live" (has the credentials it
+ * needs to talk to its vendor). Used by sync-profiles and the multi-
+ * backend admin views — the active `PUBLISHER_BACKEND` env decides where
+ * NEW posts go, but configured-but-not-active backends are still worth
+ * reflecting in the UI so the operator can see their cached profiles.
+ */
+export function listConfiguredAdapters(): PublisherAdapter[] {
+  return ALL_ADAPTERS.filter((a) => a.isLive);
+}

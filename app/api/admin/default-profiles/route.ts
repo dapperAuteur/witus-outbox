@@ -9,7 +9,7 @@ import {
 } from "@/db/schema";
 import { getAuthOptions } from "@/lib/auth";
 import { describeError } from "@/lib/db-safe";
-import { getPublisher } from "@/lib/publishers";
+import { getEnv } from "@/lib/env";
 import { listConfiguredWorkspaces } from "@/lib/workspaces";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +22,10 @@ interface AvailableProfile {
 }
 
 interface WorkspaceGroup {
+  /** Which backend's profiles populate this group. */
+  backend: string;
   workspaceId: string;
-  /** Operator-chosen symbolic name from OCOYA_WORKSPACE_IDS, when known. */
+  /** Operator-chosen symbolic name (Ocoya only — from OCOYA_WORKSPACE_IDS). */
   workspaceName: string | null;
   byNetwork: Record<
     string,
@@ -44,15 +46,16 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
   const db = getDb();
-  const publisher = getPublisher();
 
   let profiles: Array<{
+    publisherBackend: string;
     publisherProfileId: string;
     network: string;
     displayName: string | null;
     workspaceId: string | null;
   }>;
   let defaults: Array<{
+    publisherBackend: string;
     workspaceId: string;
     network: string;
     publisherProfileIds: unknown;
@@ -60,23 +63,27 @@ export async function GET(): Promise<NextResponse> {
   try {
     profiles = await db
       .select({
+        publisherBackend: socialProfiles.publisherBackend,
         publisherProfileId: socialProfiles.publisherProfileId,
         network: socialProfiles.network,
         displayName: socialProfiles.displayName,
         workspaceId: socialProfiles.workspaceId,
       })
       .from(socialProfiles)
-      .where(eq(socialProfiles.publisherBackend, publisher.backend))
-      .orderBy(asc(socialProfiles.workspaceId), asc(socialProfiles.network));
+      .orderBy(
+        asc(socialProfiles.publisherBackend),
+        asc(socialProfiles.workspaceId),
+        asc(socialProfiles.network)
+      );
 
     defaults = await db
       .select({
+        publisherBackend: defaultPublisherProfiles.publisherBackend,
         workspaceId: defaultPublisherProfiles.workspaceId,
         network: defaultPublisherProfiles.network,
         publisherProfileIds: defaultPublisherProfiles.publisherProfileIds,
       })
-      .from(defaultPublisherProfiles)
-      .where(eq(defaultPublisherProfiles.publisherBackend, publisher.backend));
+      .from(defaultPublisherProfiles);
   } catch (err) {
     const meta = describeError(err);
     console.error(
@@ -106,17 +113,27 @@ export async function GET(): Promise<NextResponse> {
     workspaceNameById.set(w.id, w.name);
   }
 
+  const groupKey = (backend: string, workspaceId: string) =>
+    `${backend}|${workspaceId}`;
+
   const groups = new Map<string, WorkspaceGroup>();
   for (const p of profiles) {
     const wsId = p.workspaceId ?? "(no-workspace)";
-    let group = groups.get(wsId);
+    const key = groupKey(p.publisherBackend, wsId);
+    let group = groups.get(key);
     if (!group) {
       group = {
+        backend: p.publisherBackend,
         workspaceId: wsId,
-        workspaceName: workspaceNameById.get(wsId) ?? null,
+        // Workspace names live in OCOYA_WORKSPACE_IDS so they only resolve
+        // for the Ocoya backend. SocialChamp groups show the raw id.
+        workspaceName:
+          p.publisherBackend === "ocoya"
+            ? workspaceNameById.get(wsId) ?? null
+            : null,
         byNetwork: {},
       };
-      groups.set(wsId, group);
+      groups.set(key, group);
     }
     if (!group.byNetwork[p.network]) {
       group.byNetwork[p.network] = { available: [], defaults: [] };
@@ -128,7 +145,7 @@ export async function GET(): Promise<NextResponse> {
     });
   }
   for (const d of defaults) {
-    const group = groups.get(d.workspaceId);
+    const group = groups.get(groupKey(d.publisherBackend, d.workspaceId));
     if (!group) continue;
     if (!group.byNetwork[d.network]) {
       group.byNetwork[d.network] = { available: [], defaults: [] };
@@ -141,12 +158,16 @@ export async function GET(): Promise<NextResponse> {
 
   return NextResponse.json({
     ok: true,
-    backend: publisher.backend,
+    activeBackend: getEnv().PUBLISHER_BACKEND,
     workspaces: Array.from(groups.values()),
   });
 }
 
 const PutBody = z.object({
+  /** Defaults to the env's active backend when omitted. Required when the
+   *  panel shows multiple backends and the operator is editing a non-active
+   *  backend's defaults. */
+  backend: z.string().min(1).optional(),
   workspaceId: z.string().min(1),
   network: z.string().min(1),
   publisherProfileIds: z.array(z.string().min(1)).max(20),
@@ -168,7 +189,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   }
 
   const db = getDb();
-  const publisher = getPublisher();
+  const backend = parsed.data.backend ?? getEnv().PUBLISHER_BACKEND;
 
   try {
     if (parsed.data.publisherProfileIds.length === 0) {
@@ -176,7 +197,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
         .delete(defaultPublisherProfiles)
         .where(
           and(
-            eq(defaultPublisherProfiles.publisherBackend, publisher.backend),
+            eq(defaultPublisherProfiles.publisherBackend, backend),
             eq(defaultPublisherProfiles.workspaceId, parsed.data.workspaceId),
             eq(defaultPublisherProfiles.network, parsed.data.network)
           )
@@ -187,7 +208,7 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
     await db
       .insert(defaultPublisherProfiles)
       .values({
-        publisherBackend: publisher.backend,
+        publisherBackend: backend,
         workspaceId: parsed.data.workspaceId,
         network: parsed.data.network,
         publisherProfileIds: parsed.data.publisherProfileIds,

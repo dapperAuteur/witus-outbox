@@ -1,7 +1,10 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { getEnv } from "@/lib/env";
-import { getDefaultWorkspaceId } from "@/lib/workspaces";
+import {
+  getDefaultWorkspaceId,
+  listConfiguredWorkspaces,
+} from "@/lib/workspaces";
 import type {
   CreatePostResult,
   PostInput,
@@ -127,6 +130,28 @@ const adapter: PublisherAdapter = {
         };
       })
       .filter((p): p is PublisherSocialProfile => p !== null);
+  },
+
+  /**
+   * Iterates every configured Ocoya workspace and concatenates results.
+   * The workspace_id field on each returned profile reflects the workspace
+   * the call was scoped to, so the sync-profiles upserter can land each
+   * profile under its correct workspace.
+   */
+  async syncAllProfiles(): Promise<PublisherSocialProfile[]> {
+    const workspaces = listConfiguredWorkspaces();
+    if (workspaces.length === 0) return [];
+    const all: PublisherSocialProfile[] = [];
+    for (const ws of workspaces) {
+      const profiles = await this.listProfiles(ws.id);
+      // Force the workspace_id we asked about onto each profile — Ocoya's
+      // /social-profiles response sometimes omits it, but we know it
+      // because we just queried for it.
+      for (const p of profiles) {
+        all.push({ ...p, workspaceId: p.workspaceId ?? ws.id });
+      }
+    }
+    return all;
   },
 
   async createPost(input: PostInput): Promise<CreatePostResult> {

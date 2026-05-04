@@ -60,6 +60,14 @@ export interface PublisherAdapter {
    */
   listProfiles(workspaceId?: string): Promise<PublisherSocialProfile[]>;
 
+  /**
+   * Returns every social profile this adapter can see in one go, doing
+   * whatever per-workspace iteration is appropriate for the backend.
+   * The sync-profiles flow calls this rather than `listProfiles` so each
+   * adapter encapsulates its own pagination / workspace semantics.
+   */
+  syncAllProfiles(): Promise<PublisherSocialProfile[]>;
+
   createPost(input: PostInput): Promise<CreatePostResult>;
 
   getPost(externalId: string): Promise<PublisherPostStatus | null>;
