@@ -6,8 +6,8 @@ import { and, desc, eq, ilike, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { scheduledPosts } from "@/db/schema";
 import { getAuthOptions } from "@/lib/auth";
-import { PostCard } from "@/components/PostCard";
 import { SignOutButton } from "@/components/SignOutButton";
+import { TriageList, type TriageRow } from "@/components/TriageList";
 import type { ScheduledPostStatus } from "@/components/StatusBadge";
 
 export const dynamic = "force-dynamic";
@@ -64,16 +64,7 @@ export default async function OutboxList({
     conditions.push(ilike(scheduledPosts.caption, `%${escaped}%`));
   }
 
-  let rows: Array<{
-    id: string;
-    source: string;
-    platform: string;
-    caption: string;
-    status: ScheduledPostStatus;
-    scheduledAt: Date;
-    publisherBackend: string;
-    publisherPostId: string | null;
-  }> = [];
+  let rows: TriageRow[] = [];
   let sourceOptions: string[] = [];
   let queryError: string | null = null;
 
@@ -232,21 +223,7 @@ export default async function OutboxList({
           sourceFilter={sourceFilter}
         />
       ) : (
-        <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
-          {rows.map((row) => (
-            <PostCard
-              key={row.id}
-              id={row.id}
-              status={row.status}
-              platform={row.platform}
-              scheduledAt={row.scheduledAt}
-              caption={row.caption}
-              source={row.source}
-              publisherBackend={row.publisherBackend}
-              publisherPostId={row.publisherPostId}
-            />
-          ))}
-        </ul>
+        <TriageList rows={rows} />
       )}
     </main>
   );
