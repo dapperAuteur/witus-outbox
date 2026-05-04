@@ -23,12 +23,20 @@ export interface TriageRow {
 
 type Action = "cancel" | "retry" | "reconcile";
 
+interface PerRowResult {
+  id: string;
+  ok: boolean;
+  error?: string;
+  status?: string;
+}
+
 interface BulkResult {
   ok: boolean;
   total: number;
   ok_count: number;
   fail_count: number;
   action: Action;
+  results: PerRowResult[];
 }
 
 const ACTION_LABEL: Record<Action, string> = {
@@ -46,6 +54,11 @@ export function TriageList({ rows }: { rows: TriageRow[] }) {
   const [error, setError] = useState<string | null>(null);
 
   const allIds = useMemo(() => rows.map((r) => r.id), [rows]);
+  const rowById = useMemo(() => {
+    const m = new Map<string, TriageRow>();
+    for (const r of rows) m.set(r.id, r);
+    return m;
+  }, [rows]);
   const allSelected = selected.size > 0 && selected.size === allIds.length;
   const someSelected = selected.size > 0 && !allSelected;
 
@@ -91,6 +104,7 @@ export function TriageList({ rows }: { rows: TriageRow[] }) {
         total: body.total,
         ok_count: body.ok_count,
         fail_count: body.fail_count,
+        results: Array.isArray(body.results) ? body.results : [],
       });
       // Refresh server-side data so status changes show. Keep selection for
       // operator review; they clear via the Clear button.
@@ -229,19 +243,7 @@ export function TriageList({ rows }: { rows: TriageRow[] }) {
           ) : null}
 
           {result ? (
-            <p
-              role="status"
-              className={
-                "mt-2 rounded-md border p-2 text-xs " +
-                (result.fail_count === 0
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-100"
-                  : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-100")
-              }
-            >
-              {ACTION_LABEL[result.action]}: {result.ok_count}/{result.total}{" "}
-              succeeded
-              {result.fail_count > 0 ? ` · ${result.fail_count} failed` : ""}.
-            </p>
+            <BulkResultBanner result={result} rowById={rowById} />
           ) : null}
         </div>
       ) : null}
@@ -309,5 +311,81 @@ function Row({
         />
       </Link>
     </li>
+  );
+}
+
+function BulkResultBanner({
+  result,
+  rowById,
+}: {
+  result: BulkResult;
+  rowById: Map<string, TriageRow>;
+}) {
+  const allOk = result.fail_count === 0;
+  const failures = result.results.filter((r) => !r.ok);
+
+  return (
+    <div
+      role="status"
+      className={
+        "mt-2 rounded-md border p-2 text-xs " +
+        (allOk
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-100"
+          : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-100")
+      }
+    >
+      <p>
+        {ACTION_LABEL[result.action]}: {result.ok_count}/{result.total}{" "}
+        succeeded
+        {result.fail_count > 0 ? ` · ${result.fail_count} failed` : ""}.
+      </p>
+      {failures.length > 0 ? (
+        <details className="mt-2 group">
+          <summary className="cursor-pointer list-none min-h-11 inline-flex items-center gap-1 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500">
+            <span
+              aria-hidden="true"
+              className="inline-block transition-transform group-open:rotate-90 motion-reduce:transition-none"
+            >
+              ▶
+            </span>
+            <span>View {failures.length} failed</span>
+          </summary>
+          <ul className="mt-2 space-y-2 border-t border-current/20 pt-2">
+            {failures.map((f) => {
+              const row = rowById.get(f.id);
+              return (
+                <li
+                  key={f.id}
+                  className="flex flex-col gap-1 rounded bg-white/60 p-2 dark:bg-slate-950/40"
+                >
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Link
+                      href={`/outbox/${f.id}`}
+                      className="font-mono text-[11px] truncate max-w-[14rem] underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500"
+                      title={f.id}
+                    >
+                      {f.id.slice(0, 8)}…
+                    </Link>
+                    {row ? (
+                      <span className="text-[11px] text-slate-600 dark:text-slate-300">
+                        {platformLabel(row.platform)} · {row.source}
+                      </span>
+                    ) : null}
+                  </div>
+                  {row ? (
+                    <p className="text-[11px] text-slate-700 dark:text-slate-200 line-clamp-1 break-words">
+                      {truncateCaption(row.caption, 80)}
+                    </p>
+                  ) : null}
+                  <p className="text-[11px] font-medium break-words">
+                    {f.error ?? "unknown error"}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      ) : null}
+    </div>
   );
 }
