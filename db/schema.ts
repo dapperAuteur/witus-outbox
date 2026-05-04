@@ -37,6 +37,14 @@ export const scheduledPosts = pgTable(
     publisherWorkspaceId: text("publisher_workspace_id"),
     publisherPostId: text("publisher_post_id"),
     publisherErrorDetail: jsonb("publisher_error_detail"),
+    /**
+     * Operator-set per-row override of the resolver's default-profile
+     * choice. NULL means "follow defaults / any-match." Non-empty array
+     * means "fan out to exactly these publisher_profile_ids for this
+     * row only." Empty array also treated as null (cleared).
+     * Resolver layer order: payload → row override → default → fallback.
+     */
+    publisherProfileIdsOverride: jsonb("publisher_profile_ids_override"),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
     lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
     postedAt: timestamp("posted_at", { withTimezone: true }),
