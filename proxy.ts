@@ -23,6 +23,7 @@ export const config = {
     "/api/admin/ocoya-profile-debug",
     "/api/admin/default-profiles",
     "/api/admin/export-radaar-csv",
+    "/api/admin/export-socialchamp-csv",
     "/api/admin/socialchamp-debug",
   ],
 };
