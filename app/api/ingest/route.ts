@@ -1,8 +1,8 @@
 import { after, NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import { publishAttempts, scheduledPosts } from "@/db/schema";
+import { publishAttempts, scheduledPosts, socialProfiles } from "@/db/schema";
 import { sendOutboxAlert } from "@/lib/alerts";
 import { safeDbWrite } from "@/lib/db-safe";
 import { verifySignature } from "@/lib/hmac";
@@ -38,6 +38,15 @@ const IngestPayload = z.object({
       },
       "scheduled_at must be at least 5 minutes in the future"
     ),
+  /**
+   * Optional per-row profile selection from the publisher (slice 21).
+   * When present, takes precedence over the workspace default and the
+   * any-match fallback. Each id must exist in the local social_profile
+   * cache for the resolved (publisher_backend, workspace_id) — invalid
+   * ids are rejected at ingest with 400 + {unknown: string[]} so a
+   * misconfigured publisher gets immediate feedback.
+   */
+  social_profile_ids: z.array(z.string().min(1)).max(20).optional(),
 });
 
 function reject(status: number): NextResponse {
@@ -127,6 +136,42 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // Slice 21 — payload-specified profile IDs (option C). When present,
+  // validate every id against the local social_profile cache for this
+  // row's (backend, workspace) so a misconfigured publisher gets fast
+  // feedback instead of a silent run-through to the publisher API.
+  // Stored on publisher_profile_ids_override so the resolver picks it
+  // up via the same row-override branch slice 20 added — and so the
+  // operator can clear/edit it from the detail-page UI if needed.
+  const payloadProfileIds = parsed.data.social_profile_ids ?? [];
+  if (payloadProfileIds.length > 0) {
+    const profileWhere = workspaceId
+      ? and(
+          eq(socialProfiles.publisherBackend, publisher.backend),
+          eq(socialProfiles.workspaceId, workspaceId)
+        )
+      : eq(socialProfiles.publisherBackend, publisher.backend);
+    const known = await db
+      .select({ publisherProfileId: socialProfiles.publisherProfileId })
+      .from(socialProfiles)
+      .where(
+        and(profileWhere, inArray(socialProfiles.publisherProfileId, payloadProfileIds))
+      );
+    const knownIds = new Set(known.map((k) => k.publisherProfileId));
+    const unknown = payloadProfileIds.filter((id) => !knownIds.has(id));
+    if (unknown.length > 0) {
+      console.warn(
+        "[ingest] payload social_profile_ids unknown source=%s count=%d",
+        source,
+        unknown.length
+      );
+      return NextResponse.json(
+        { ok: false, error: "unknown_profile_ids", unknown },
+        { status: 400 }
+      );
+    }
+  }
+
   const insertResult = await safeDbWrite(
     {
       op: "scheduled_post.insert",
@@ -147,6 +192,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           status: "queued",
           publisherBackend: publisher.backend,
           publisherWorkspaceId: workspaceId,
+          publisherProfileIdsOverride:
+            payloadProfileIds.length > 0 ? payloadProfileIds : null,
         })
         .returning({ id: scheduledPosts.id })
   );
@@ -176,6 +223,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       caption: parsed.data.caption,
       mediaUrls: parsed.data.media_urls,
       workspaceId: workspaceId ?? undefined,
+      profileIdsOverride:
+        payloadProfileIds.length > 0 ? payloadProfileIds : undefined,
     })
   );
 
@@ -193,6 +242,8 @@ interface SubmitArgs {
   caption: string;
   mediaUrls: string[];
   workspaceId?: string;
+  /** Slice 21 — payload-specified profile ids, when present. */
+  profileIdsOverride?: string[];
 }
 
 async function submitToPublisher(args: SubmitArgs): Promise<void> {
@@ -203,6 +254,7 @@ async function submitToPublisher(args: SubmitArgs): Promise<void> {
     publisherBackend: publisher.backend,
     workspaceId: args.workspaceId ?? null,
     network: args.platform,
+    rowOverride: args.profileIdsOverride,
   });
 
   if (resolved.ids.length === 0 && publisher.isLive) {

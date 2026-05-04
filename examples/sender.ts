@@ -36,6 +36,19 @@ export interface OutboxSubmission {
   links?: string[];
   /** ISO-8601 UTC. Receiver requires ≥ now + 5 minutes. */
   scheduled_at: string;
+  /**
+   * Optional per-row override of the receiver's default-profile choice.
+   * When omitted, outbox falls back to the workspace default (or the
+   * any-match fallback). When present, every id must exist in outbox's
+   * `social_profile` cache for the resolved (publisher_backend,
+   * workspace) — invalid ids return `400 unknown_profile_ids` from the
+   * receiver.
+   *
+   * Discover available ids by visiting `/outbox/setup` on the receiver
+   * (logged in as admin) — each workspace card shows the cached profiles
+   * with their ids.
+   */
+  social_profile_ids?: string[];
 }
 
 export interface SendArgs {
