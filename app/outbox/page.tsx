@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import { Search, Settings } from "lucide-react";
-import { and, desc, eq, ilike, sql, type SQL } from "drizzle-orm";
+import { Download, Search, Settings } from "lucide-react";
+import { and, desc, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { scheduledPosts } from "@/db/schema";
 import { getAuthOptions } from "@/lib/auth";
+import { parseTriageFilters } from "@/lib/triage-query";
 import { SignOutButton } from "@/components/SignOutButton";
 import { TriageList, type TriageRow } from "@/components/TriageList";
 import type { ScheduledPostStatus } from "@/components/StatusBadge";
@@ -49,20 +50,14 @@ export default async function OutboxList({
   }
 
   const sp = await searchParams;
-  const statusRaw = takeOne(sp.status);
-  const statusFilter = VALID_STATUSES.find((s) => s === statusRaw);
-  const qRaw = takeOne(sp.q)?.trim() ?? "";
-  const qFilter = qRaw.length > 0 ? qRaw.slice(0, 200) : "";
-  const sourceRaw = takeOne(sp.source)?.trim() ?? "";
-  const sourceFilter = sourceRaw.length > 0 ? sourceRaw.slice(0, 100) : "";
-
-  const conditions: SQL[] = [];
-  if (statusFilter) conditions.push(eq(scheduledPosts.status, statusFilter));
-  if (sourceFilter) conditions.push(eq(scheduledPosts.source, sourceFilter));
-  if (qFilter) {
-    const escaped = qFilter.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
-    conditions.push(ilike(scheduledPosts.caption, `%${escaped}%`));
-  }
+  const filters = parseTriageFilters({
+    status: takeOne(sp.status) ?? null,
+    source: takeOne(sp.source) ?? null,
+    q: takeOne(sp.q) ?? null,
+  });
+  const statusFilter = filters.status;
+  const sourceFilter = filters.source ?? "";
+  const qFilter = filters.q ?? "";
 
   let rows: TriageRow[] = [];
   let sourceOptions: string[] = [];
@@ -84,8 +79,8 @@ export default async function OutboxList({
       .orderBy(desc(scheduledPosts.scheduledAt))
       .limit(100);
     rows =
-      conditions.length > 0
-        ? await query.where(and(...conditions))
+      filters.conditions.length > 0
+        ? await query.where(and(...filters.conditions))
         : await query;
 
     const sourceRows = await getDb()
@@ -180,6 +175,20 @@ export default async function OutboxList({
               Clear
             </Link>
           ) : null}
+          <a
+            href={buildExportHref({
+              status: statusFilter,
+              q: qFilter,
+              source: sourceFilter,
+            })}
+            download
+            className="inline-flex min-h-11 items-center justify-center gap-1 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            aria-label="Download current view as CSV"
+            title="Download current view as CSV"
+          >
+            <Download className="size-4" aria-hidden="true" />
+            <span>CSV</span>
+          </a>
         </div>
       </form>
 
@@ -240,6 +249,21 @@ function buildHref(params: {
   if (params.source) sp.set("source", params.source);
   const qs = sp.toString();
   return qs ? `/outbox?${qs}` : "/outbox";
+}
+
+function buildExportHref(params: {
+  status?: ScheduledPostStatus;
+  q?: string;
+  source?: string;
+}): string {
+  const sp = new URLSearchParams();
+  if (params.status) sp.set("status", params.status);
+  if (params.q) sp.set("q", params.q);
+  if (params.source) sp.set("source", params.source);
+  const qs = sp.toString();
+  return qs
+    ? `/api/admin/export-triage-csv?${qs}`
+    : "/api/admin/export-triage-csv";
 }
 
 function FilterChip({
