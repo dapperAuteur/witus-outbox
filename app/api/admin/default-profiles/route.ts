@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { getAuthOptions } from "@/lib/auth";
 import { getPublisher } from "@/lib/publishers";
+import { listConfiguredWorkspaces } from "@/lib/workspaces";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -21,6 +22,8 @@ interface AvailableProfile {
 
 interface WorkspaceGroup {
   workspaceId: string;
+  /** Operator-chosen symbolic name from OCOYA_WORKSPACE_IDS, when known. */
+  workspaceName: string | null;
   byNetwork: Record<
     string,
     {
@@ -62,12 +65,21 @@ export async function GET(): Promise<NextResponse> {
     .from(defaultPublisherProfiles)
     .where(eq(defaultPublisherProfiles.publisherBackend, publisher.backend));
 
+  const workspaceNameById = new Map<string, string>();
+  for (const w of listConfiguredWorkspaces()) {
+    workspaceNameById.set(w.id, w.name);
+  }
+
   const groups = new Map<string, WorkspaceGroup>();
   for (const p of profiles) {
     const wsId = p.workspaceId ?? "(no-workspace)";
     let group = groups.get(wsId);
     if (!group) {
-      group = { workspaceId: wsId, byNetwork: {} };
+      group = {
+        workspaceId: wsId,
+        workspaceName: workspaceNameById.get(wsId) ?? null,
+        byNetwork: {},
+      };
       groups.set(wsId, group);
     }
     if (!group.byNetwork[p.network]) {

@@ -20,6 +20,7 @@ export const config = {
     "/outbox/:path*",
     "/api/admin/scheduled-posts/:path*",
     "/api/admin/ocoya-workspaces",
+    "/api/admin/ocoya-profile-debug",
     "/api/admin/default-profiles",
   ],
 };
