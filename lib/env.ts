@@ -31,6 +31,9 @@ const EnvSchema = z.object({
   // entries reference workspaces by name even if the underlying Ocoya ID
   // changes. Parsed by lib/workspaces.ts. See .env.example for shape.
   OCOYA_WORKSPACE_IDS: z.string().optional(),
+  // SocialChamp API bearer token. Read by lib/publishers/socialchamp.ts.
+  // Optional in local/preview — adapter dev-logs when missing.
+  SOCIAL_CHAMP_API_KEY: z.string().optional(),
   // Bearer token shared between admin CLIs (e.g. scripts/sync-social-profiles.ts)
   // and the future Apps Script reconciler. Distinct from any publisher's
   // INGEST_SOURCES secret. ≥32 chars in production.
