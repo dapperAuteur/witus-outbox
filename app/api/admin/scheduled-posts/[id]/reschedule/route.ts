@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getServerSession } from "next-auth";
 import { getAuthOptions } from "@/lib/auth";
 import { reschedulePost } from "@/lib/admin-actions";
+import { describeError } from "@/lib/db-safe";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,6 +41,24 @@ export async function POST(
   if (Number.isNaN(newAt.getTime())) {
     return NextResponse.json({ ok: false, error: "invalid_date" }, { status: 400 });
   }
-  const result = await reschedulePost(id, newAt);
-  return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+  try {
+    const result = await reschedulePost(id, newAt);
+    return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+  } catch (err) {
+    const meta = describeError(err);
+    console.error(
+      "[admin/scheduled-posts/reschedule] id=%s err=%s code=%s",
+      id,
+      meta.name,
+      meta.code ?? "?"
+    );
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `${meta.name}${meta.code ? ` (${meta.code})` : ""}`,
+        sqlstate: meta.code,
+      },
+      { status: 503 }
+    );
+  }
 }

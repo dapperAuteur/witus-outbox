@@ -8,6 +8,7 @@ import {
   socialProfiles,
 } from "@/db/schema";
 import { getAuthOptions } from "@/lib/auth";
+import { describeError } from "@/lib/db-safe";
 import { getPublisher } from "@/lib/publishers";
 import { listConfiguredWorkspaces } from "@/lib/workspaces";
 
@@ -45,25 +46,60 @@ export async function GET(): Promise<NextResponse> {
   const db = getDb();
   const publisher = getPublisher();
 
-  const profiles = await db
-    .select({
-      publisherProfileId: socialProfiles.publisherProfileId,
-      network: socialProfiles.network,
-      displayName: socialProfiles.displayName,
-      workspaceId: socialProfiles.workspaceId,
-    })
-    .from(socialProfiles)
-    .where(eq(socialProfiles.publisherBackend, publisher.backend))
-    .orderBy(asc(socialProfiles.workspaceId), asc(socialProfiles.network));
+  let profiles: Array<{
+    publisherProfileId: string;
+    network: string;
+    displayName: string | null;
+    workspaceId: string | null;
+  }>;
+  let defaults: Array<{
+    workspaceId: string;
+    network: string;
+    publisherProfileIds: unknown;
+  }>;
+  try {
+    profiles = await db
+      .select({
+        publisherProfileId: socialProfiles.publisherProfileId,
+        network: socialProfiles.network,
+        displayName: socialProfiles.displayName,
+        workspaceId: socialProfiles.workspaceId,
+      })
+      .from(socialProfiles)
+      .where(eq(socialProfiles.publisherBackend, publisher.backend))
+      .orderBy(asc(socialProfiles.workspaceId), asc(socialProfiles.network));
 
-  const defaults = await db
-    .select({
-      workspaceId: defaultPublisherProfiles.workspaceId,
-      network: defaultPublisherProfiles.network,
-      publisherProfileIds: defaultPublisherProfiles.publisherProfileIds,
-    })
-    .from(defaultPublisherProfiles)
-    .where(eq(defaultPublisherProfiles.publisherBackend, publisher.backend));
+    defaults = await db
+      .select({
+        workspaceId: defaultPublisherProfiles.workspaceId,
+        network: defaultPublisherProfiles.network,
+        publisherProfileIds: defaultPublisherProfiles.publisherProfileIds,
+      })
+      .from(defaultPublisherProfiles)
+      .where(eq(defaultPublisherProfiles.publisherBackend, publisher.backend));
+  } catch (err) {
+    const meta = describeError(err);
+    console.error(
+      "[admin/default-profiles GET] err=%s code=%s",
+      meta.name,
+      meta.code ?? "?"
+    );
+    const hint =
+      meta.code === "42P01"
+        ? "Run `npm run db:push` against this environment's Neon branch — a table is missing."
+        : meta.code === "42703"
+          ? "Run `npm run db:push` — a column is missing."
+          : null;
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `${meta.name}${meta.code ? ` (${meta.code})` : ""}`,
+        sqlstate: meta.code,
+        hint,
+      },
+      { status: 503 }
+    );
+  }
 
   const workspaceNameById = new Map<string, string>();
   for (const w of listConfiguredWorkspaces()) {
@@ -134,38 +170,58 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   const db = getDb();
   const publisher = getPublisher();
 
-  if (parsed.data.publisherProfileIds.length === 0) {
+  try {
+    if (parsed.data.publisherProfileIds.length === 0) {
+      await db
+        .delete(defaultPublisherProfiles)
+        .where(
+          and(
+            eq(defaultPublisherProfiles.publisherBackend, publisher.backend),
+            eq(defaultPublisherProfiles.workspaceId, parsed.data.workspaceId),
+            eq(defaultPublisherProfiles.network, parsed.data.network)
+          )
+        );
+      return NextResponse.json({ ok: true, removed: true });
+    }
+
     await db
-      .delete(defaultPublisherProfiles)
-      .where(
-        and(
-          eq(defaultPublisherProfiles.publisherBackend, publisher.backend),
-          eq(defaultPublisherProfiles.workspaceId, parsed.data.workspaceId),
-          eq(defaultPublisherProfiles.network, parsed.data.network)
-        )
-      );
-    return NextResponse.json({ ok: true, removed: true });
-  }
-
-  await db
-    .insert(defaultPublisherProfiles)
-    .values({
-      publisherBackend: publisher.backend,
-      workspaceId: parsed.data.workspaceId,
-      network: parsed.data.network,
-      publisherProfileIds: parsed.data.publisherProfileIds,
-    })
-    .onConflictDoUpdate({
-      target: [
-        defaultPublisherProfiles.publisherBackend,
-        defaultPublisherProfiles.workspaceId,
-        defaultPublisherProfiles.network,
-      ],
-      set: {
+      .insert(defaultPublisherProfiles)
+      .values({
+        publisherBackend: publisher.backend,
+        workspaceId: parsed.data.workspaceId,
+        network: parsed.data.network,
         publisherProfileIds: parsed.data.publisherProfileIds,
-        updatedAt: new Date(),
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: [
+          defaultPublisherProfiles.publisherBackend,
+          defaultPublisherProfiles.workspaceId,
+          defaultPublisherProfiles.network,
+        ],
+        set: {
+          publisherProfileIds: parsed.data.publisherProfileIds,
+          updatedAt: new Date(),
+        },
+      });
 
-  return NextResponse.json({ ok: true, count: parsed.data.publisherProfileIds.length });
+    return NextResponse.json({
+      ok: true,
+      count: parsed.data.publisherProfileIds.length,
+    });
+  } catch (err) {
+    const meta = describeError(err);
+    console.error(
+      "[admin/default-profiles PUT] err=%s code=%s",
+      meta.name,
+      meta.code ?? "?"
+    );
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `${meta.name}${meta.code ? ` (${meta.code})` : ""}`,
+        sqlstate: meta.code,
+      },
+      { status: 503 }
+    );
+  }
 }

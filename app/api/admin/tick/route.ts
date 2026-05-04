@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
+import { describeError } from "@/lib/db-safe";
 import { getEnv } from "@/lib/env";
 import { runReconciler } from "@/lib/reconciler";
 
@@ -50,10 +51,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
-    const code = err instanceof Error ? err.name : "UnknownError";
-    console.error("[admin/tick] err=%s", code);
+    const meta = describeError(err);
+    console.error("[admin/tick] err=%s code=%s", meta.name, meta.code ?? "?");
     return NextResponse.json(
-      { ok: false, error: `tick failed: ${code}` },
+      {
+        ok: false,
+        error: `tick failed: ${meta.name}${meta.code ? ` (${meta.code})` : ""}`,
+        sqlstate: meta.code,
+      },
       { status: 500 }
     );
   }
