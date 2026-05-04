@@ -3,6 +3,7 @@ import { ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge, type ScheduledPostStatus } from "@/components/StatusBadge";
 import { formatScheduledTime, truncateCaption } from "@/lib/format";
+import { platformLabel } from "@/lib/platforms";
 
 export interface PostCardProps {
   id: string;
@@ -21,12 +22,12 @@ export function PostCard(props: PostCardProps) {
       <Link
         href={`/outbox/${props.id}`}
         className="flex items-stretch gap-3 p-4 transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-violet-500 motion-reduce:transition-none dark:hover:bg-slate-800"
-        aria-label={`Open post scheduled ${formatScheduledTime(props.scheduledAt)} for ${props.platform}`}
+        aria-label={`Open post scheduled ${formatScheduledTime(props.scheduledAt)} for ${platformLabel(props.platform)}`}
       >
         <div className="flex flex-1 flex-col gap-2 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={props.status} />
-            <Badge tone="slate">{props.platform}</Badge>
+            <Badge tone="slate">{platformLabel(props.platform)}</Badge>
             <time
               dateTime={props.scheduledAt.toISOString()}
               className="text-xs text-slate-500 dark:text-slate-400 ml-auto sm:ml-0"
