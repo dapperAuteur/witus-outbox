@@ -7,6 +7,7 @@ import { getDb } from "@/db";
 import { publishAttempts, scheduledPosts, socialProfiles } from "@/db/schema";
 import { Badge } from "@/components/ui/badge";
 import { PostActions } from "@/components/PostActions";
+import { RowProfileOverride } from "@/components/RowProfileOverride";
 import { StatusBadge, type ScheduledPostStatus } from "@/components/StatusBadge";
 import { SignOutButton } from "@/components/SignOutButton";
 import { getAuthOptions } from "@/lib/auth";
@@ -196,6 +197,16 @@ export default async function OutboxDetail({
           scheduledAtIso={post.scheduledAt.toISOString()}
           publisherBackend={post.publisherBackend}
         />
+      </section>
+
+      <section
+        aria-labelledby="profile-override-heading"
+        className="rounded-lg border border-slate-200 bg-white p-5 sm:p-6 dark:border-slate-800 dark:bg-slate-900 space-y-3"
+      >
+        <h2 id="profile-override-heading" className="text-base font-medium">
+          Profile selection
+        </h2>
+        <RowProfileOverride postId={post.id} />
       </section>
 
       <section

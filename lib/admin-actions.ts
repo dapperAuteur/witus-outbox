@@ -40,6 +40,7 @@ export async function retryPost(id: string): Promise<ActionResult> {
     publisherBackend: row.publisherBackend,
     workspaceId: row.publisherWorkspaceId,
     network: row.platform,
+    rowOverride: row.publisherProfileIdsOverride,
   });
 
   if (resolved.ids.length === 0 && publisher.isLive) {

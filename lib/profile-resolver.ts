@@ -7,32 +7,48 @@ export interface ResolveArgs {
   publisherBackend: string;
   workspaceId: string | null;
   network: string;
+  /**
+   * Per-row override IDs (slice 20). Pass `row.publisherProfileIdsOverride`
+   * verbatim — the resolver coerces non-array / empty values to "no
+   * override" automatically. When non-empty, takes precedence over the
+   * (workspace, network) default and the any-match fallback.
+   */
+  rowOverride?: unknown;
 }
 
 export interface ResolvedProfiles {
   /** The publisher's profile IDs to pass into createPost. */
   ids: string[];
-  /** How the IDs were chosen: "default" = operator-configured, "fallback" = any-match by lastSyncedAt, "none" = nothing matched. */
-  source: "default" | "fallback" | "none";
+  /** How the IDs were chosen. */
+  source: "row_override" | "default" | "fallback" | "none";
 }
 
 /**
- * Single source of truth for "which publisher_profile_ids does this row target?"
+ * Single source of truth for "which publisher_profile_ids does this row
+ * target?" — across every backend, every layer.
  *
- * Resolution order:
- *   1. default_publisher_profile entry for (backend, workspace, network)
- *      → fan out to every ID in that entry's array.
- *   2. Any matching social_profile rows (most-recently-synced first)
- *      → pick exactly one.
- *   3. Empty.
+ * Resolution order (top wins):
+ *   1. row.publisherProfileIdsOverride         → "row_override"
+ *   2. default_publisher_profile entry         → "default"
+ *   3. social_profile any-match (most-recent)  → "fallback"
+ *   4. empty                                   → "none"
  *
  * Workspace filter only applies when workspaceId is provided. When omitted
- * (legacy single-workspace setups, future cross-workspace sources), step 1
- * is skipped and step 2 runs without the workspace constraint.
+ * (legacy single-workspace setups, future cross-workspace sources), step 2
+ * is skipped and step 3 runs without the workspace constraint.
+ *
+ * Slice 21 will add a higher layer: payload-specified IDs from the ingest
+ * request body (option C from plans/future/profile-selection.md). Add it
+ * above the row_override branch when that lands.
  */
 export async function resolveProfileIds(
   args: ResolveArgs
 ): Promise<ResolvedProfiles> {
+  const override = sanitizeIdArray(args.rowOverride);
+  if (override.length > 0) {
+    return { ids: override, source: "row_override" };
+  }
+
   const db = getDb();
 
   if (args.workspaceId) {
@@ -44,10 +60,8 @@ export async function resolveProfileIds(
       ),
       columns: { publisherProfileIds: true },
     });
-    if (cfg && Array.isArray(cfg.publisherProfileIds)) {
-      const ids = cfg.publisherProfileIds.filter(
-        (v): v is string => typeof v === "string" && v.length > 0
-      );
+    if (cfg) {
+      const ids = sanitizeIdArray(cfg.publisherProfileIds);
       if (ids.length > 0) {
         return { ids, source: "default" };
       }
@@ -75,4 +89,12 @@ export async function resolveProfileIds(
     return { ids: [fallback.publisherProfileId], source: "fallback" };
   }
   return { ids: [], source: "none" };
+}
+
+/** Coerce arbitrary jsonb shapes to a clean string[]. Drops empties. */
+function sanitizeIdArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (v): v is string => typeof v === "string" && v.length > 0
+  );
 }
