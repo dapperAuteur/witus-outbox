@@ -295,9 +295,13 @@ async function run(): Promise<void> {
         },
       });
       if (res.ok) {
-        counts.sent++;
+        // recordStatus="queued" → freshly created. Anything else → existing
+        // row matched on (source, external_ref); idempotent no-op.
+        const wasNew = res.recordStatus === "queued";
+        if (wasNew) counts.sent++;
+        else counts.duplicate++;
         console.log(
-          `[import] row=${i + 1} ok platform=${built.platform} ref=${built.externalRef} id=${res.id}`
+          `[import] row=${i + 1} ${wasNew ? "ok" : "duplicate"} platform=${built.platform} ref=${built.externalRef} id=${res.id} record_status=${res.recordStatus ?? "?"}`
         );
       } else {
         counts.failed++;
