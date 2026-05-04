@@ -86,6 +86,37 @@ export const socialProfiles = pgTable(
   ]
 );
 
+/**
+ * Operator-managed defaults for which publisher_profile_ids a given
+ * (publisher_backend, workspace_id, network) tuple should fan out to at
+ * submit time. When no entry exists for a tuple, ingest falls back to "any
+ * matching profile" via `social_profile`. Multiple IDs in `publisher_profile_ids`
+ * → Ocoya posts to all of them in one createPost call.
+ */
+export const defaultPublisherProfiles = pgTable(
+  "default_publisher_profile",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    publisherBackend: text("publisher_backend").notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    network: text("network").notNull(),
+    publisherProfileIds: jsonb("publisher_profile_ids").notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique("default_publisher_profile_tuple_unique").on(
+      t.publisherBackend,
+      t.workspaceId,
+      t.network
+    ),
+  ]
+);
+
 export const webhookSources = pgTable("webhook_source", {
   id: uuid("id").defaultRandom().primaryKey(),
   slug: text("slug").notNull().unique(),

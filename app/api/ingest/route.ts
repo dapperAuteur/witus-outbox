@@ -1,13 +1,14 @@
 import { after, NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { publishAttempts, scheduledPosts, socialProfiles } from "@/db/schema";
+import { publishAttempts, scheduledPosts } from "@/db/schema";
 import { sendOutboxAlert } from "@/lib/alerts";
 import { safeDbWrite } from "@/lib/db-safe";
 import { verifySignature } from "@/lib/hmac";
 import { getSourceSecret } from "@/lib/ingest-sources";
 import { getSourceWorkspaceName } from "@/lib/ingest-workspaces";
+import { resolveProfileIds } from "@/lib/profile-resolver";
 import { getPublisher } from "@/lib/publishers";
 import { PLATFORMS } from "@/lib/publishers/types";
 import { getDefaultWorkspaceId, getWorkspaceIdByName } from "@/lib/workspaces";
@@ -198,24 +199,13 @@ async function submitToPublisher(args: SubmitArgs): Promise<void> {
   const db = getDb();
   const publisher = getPublisher();
 
-  const profileWhere = args.workspaceId
-    ? and(
-        eq(socialProfiles.publisherBackend, publisher.backend),
-        eq(socialProfiles.network, args.platform),
-        eq(socialProfiles.workspaceId, args.workspaceId)
-      )
-    : and(
-        eq(socialProfiles.publisherBackend, publisher.backend),
-        eq(socialProfiles.network, args.platform)
-      );
-
-  const profile = await db.query.socialProfiles.findFirst({
-    where: profileWhere,
-    orderBy: [desc(socialProfiles.lastSyncedAt)],
-    columns: { publisherProfileId: true },
+  const resolved = await resolveProfileIds({
+    publisherBackend: publisher.backend,
+    workspaceId: args.workspaceId ?? null,
+    network: args.platform,
   });
 
-  if (!profile && publisher.isLive) {
+  if (resolved.ids.length === 0 && publisher.isLive) {
     await markRowAsError(args.id, "no_social_profile", null);
     await db.insert(publishAttempts).values({
       scheduledPostId: args.id,
@@ -235,12 +225,10 @@ async function submitToPublisher(args: SubmitArgs): Promise<void> {
     return;
   }
 
-  const socialProfileIds = profile ? [profile.publisherProfileId] : [];
-
   const result = await publisher.createPost({
     caption: args.caption,
     mediaUrls: args.mediaUrls,
-    socialProfileIds,
+    socialProfileIds: resolved.ids,
     scheduledAt: args.scheduledAt,
     workspaceId: args.workspaceId,
   });

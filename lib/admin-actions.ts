@@ -1,8 +1,9 @@
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { publishAttempts, scheduledPosts, socialProfiles } from "@/db/schema";
+import { publishAttempts, scheduledPosts } from "@/db/schema";
 import { sendOutboxAlert } from "@/lib/alerts";
+import { resolveProfileIds } from "@/lib/profile-resolver";
 import { getPublisher } from "@/lib/publishers";
 
 export interface ActionResult {
@@ -35,23 +36,13 @@ export async function retryPost(id: string): Promise<ActionResult> {
     return { ok: false, error: "already_submitted" };
   }
 
-  const profileWhere = row.publisherWorkspaceId
-    ? and(
-        eq(socialProfiles.publisherBackend, row.publisherBackend),
-        eq(socialProfiles.network, row.platform),
-        eq(socialProfiles.workspaceId, row.publisherWorkspaceId)
-      )
-    : and(
-        eq(socialProfiles.publisherBackend, row.publisherBackend),
-        eq(socialProfiles.network, row.platform)
-      );
-  const profile = await db.query.socialProfiles.findFirst({
-    where: profileWhere,
-    orderBy: [desc(socialProfiles.lastSyncedAt)],
-    columns: { publisherProfileId: true },
+  const resolved = await resolveProfileIds({
+    publisherBackend: row.publisherBackend,
+    workspaceId: row.publisherWorkspaceId,
+    network: row.platform,
   });
 
-  if (!profile && publisher.isLive) {
+  if (resolved.ids.length === 0 && publisher.isLive) {
     await db
       .update(scheduledPosts)
       .set({
@@ -78,13 +69,12 @@ export async function retryPost(id: string): Promise<ActionResult> {
     return { ok: false, error: "no_social_profile", status: "error" };
   }
 
-  const socialProfileIds = profile ? [profile.publisherProfileId] : [];
   const result = await publisher.createPost({
     caption: row.caption,
     mediaUrls: Array.isArray(row.mediaUrls)
       ? row.mediaUrls.filter((v): v is string => typeof v === "string")
       : [],
-    socialProfileIds,
+    socialProfileIds: resolved.ids,
     scheduledAt: row.scheduledAt,
     workspaceId: row.publisherWorkspaceId ?? undefined,
   });

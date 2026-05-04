@@ -107,7 +107,7 @@ const adapter: PublisherAdapter = {
     }>;
     return body.map((p) => ({
       publisherProfileId: String(p.id),
-      network: p.network ?? "unknown",
+      network: normalizeOcoyaNetwork(p.network),
       displayName: p.displayName ?? null,
       workspaceId: p.workspaceId != null ? String(p.workspaceId) : null,
     }));
@@ -273,6 +273,53 @@ const adapter: PublisherAdapter = {
     }
   },
 };
+
+/**
+ * Maps whatever Ocoya returns in the `network` field to the canonical
+ * lowercase platform key the rest of outbox uses (matches the Platform
+ * type in lib/publishers/types.ts and the `platform` column on
+ * scheduled_post). Without this, profile lookups fail because the
+ * cached `network` column ends up uppercase or otherwise non-canonical.
+ */
+function normalizeOcoyaNetwork(raw: string | null | undefined): string {
+  if (!raw) return "unknown";
+  const lower = raw.toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
+  switch (lower) {
+    case "twitter":
+    case "x":
+    case "twitter_x":
+      return "twitter";
+    case "facebook":
+    case "facebook_page":
+    case "facebook_group":
+    case "facebook_business":
+      return "facebook";
+    case "instagram":
+    case "instagram_business":
+    case "instagram_personal":
+      return "instagram";
+    case "linkedin":
+    case "linkedin_company":
+    case "linkedin_personal":
+    case "linkedin_business":
+      return "linkedin";
+    case "youtube":
+    case "youtube_channel":
+      return "youtube";
+    case "bluesky":
+    case "blue_sky":
+    case "bsky":
+      return "bluesky";
+    case "tiktok":
+    case "tik_tok":
+      return "tiktok";
+    case "pinterest":
+    case "pin":
+      return "pinterest";
+    default:
+      return lower;
+  }
+}
 
 function mapOcoyaPost(body: {
   id?: string | number;
