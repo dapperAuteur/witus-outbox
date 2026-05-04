@@ -7,6 +7,7 @@ import { DefaultProfilesPanel } from "@/components/DefaultProfilesPanel";
 import { OcoyaWorkspaceFetcher } from "@/components/OcoyaWorkspaceFetcher";
 import { RadaarExportButton } from "@/components/RadaarExportButton";
 import { SignOutButton } from "@/components/SignOutButton";
+import { SocialChampExportButton } from "@/components/SocialChampExportButton";
 import { SyncProfilesButton } from "@/components/SyncProfilesButton";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +52,8 @@ export default async function OutboxSetup() {
       <DefaultProfilesPanel />
 
       <RadaarExportButton />
+
+      <SocialChampExportButton />
     </main>
   );
 }
