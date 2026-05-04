@@ -24,8 +24,11 @@ loadEnv({ quiet: true });
 
 interface SyncResult {
   ok: boolean;
-  backend?: string;
-  workspacesQueried?: Array<{ name: string; id: string; profilesFound: number }>;
+  backends?: Array<{
+    backend: string;
+    profilesUpserted: number;
+    workspaces: Array<{ workspaceId: string | null; profilesFound: number }>;
+  }>;
   totalUpserted?: number;
   notConfigured?: boolean;
   error?: string;
@@ -112,23 +115,28 @@ async function run(): Promise<void> {
 
   if (body.notConfigured) {
     console.warn(
-      `[sync] backend=${body.backend} is not configured (no API key in target env). Nothing to do.`
+      "[sync] no backend has credentials in this environment — nothing to do"
     );
     return;
   }
 
   console.log(
-    `[sync] backend=${body.backend} workspaces=${body.workspacesQueried?.length ?? 0} profiles_upserted=${body.totalUpserted ?? 0}`
+    `[sync] backends=${body.backends?.length ?? 0} total_upserted=${body.totalUpserted ?? 0}`
   );
-  for (const w of body.workspacesQueried ?? []) {
+  for (const b of body.backends ?? []) {
     console.log(
-      `[sync]   workspace=${w.name} id=${w.id} profiles_found=${w.profilesFound}`
+      `[sync]   backend=${b.backend} upserted=${b.profilesUpserted} workspaces=${b.workspaces.length}`
     );
+    for (const w of b.workspaces) {
+      console.log(
+        `[sync]     workspace=${w.workspaceId ?? "(none)"} profiles=${w.profilesFound}`
+      );
+    }
   }
 
   if ((body.totalUpserted ?? 0) === 0) {
     console.warn(
-      "[sync] 0 profiles upserted. Connect your social accounts in Ocoya first:"
+      "[sync] 0 profiles upserted. Connect your social accounts in the publisher dashboard first:"
     );
     console.warn(
       "[sync]   https://app.ocoya.com → each workspace → Social profiles → connect each network"

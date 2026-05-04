@@ -7,8 +7,11 @@ import { Badge } from "@/components/ui/badge";
 
 interface SyncSuccess {
   ok: true;
-  backend: string;
-  workspacesQueried: Array<{ name: string; id: string; profilesFound: number }>;
+  backends: Array<{
+    backend: string;
+    profilesUpserted: number;
+    workspaces: Array<{ workspaceId: string | null; profilesFound: number }>;
+  }>;
   totalUpserted: number;
   notConfigured?: boolean;
 }
@@ -58,13 +61,10 @@ export function SyncProfilesButton() {
           Sync social profiles
         </h2>
         <p className="text-sm text-slate-600 dark:text-slate-400">
-          Pulls connected social accounts (Twitter, LinkedIn, BlueSky, etc.)
-          from each configured Ocoya workspace and caches them locally so the
-          ingest path can resolve{" "}
-          <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-xs">
-            (platform, workspace) → publisher_profile_id
-          </code>
-          {" "}at submit time. Run after connecting accounts in Ocoya.
+          Pulls connected social accounts from <strong>every configured
+          publisher backend</strong> (Ocoya, SocialChamp, etc.) into the
+          local cache. Run after connecting accounts in any vendor&rsquo;s
+          dashboard. Backends without an API key in env are skipped.
         </p>
       </header>
 
@@ -94,37 +94,43 @@ export function SyncProfilesButton() {
 
       {data?.notConfigured ? (
         <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-100">
-          Backend <strong>{data.backend}</strong> isn&rsquo;t configured in this
-          environment (no API key). Nothing to sync.
+          No publisher backend has credentials in this environment.
+          Set <code>OCOYA_API_KEY</code> and/or <code>SOCIAL_CHAMP_API_KEY</code>{" "}
+          to enable syncing.
         </p>
       ) : data ? (
         <div className="space-y-3">
           <p className="text-sm text-slate-700 dark:text-slate-300">
-            Synced from <strong>{data.backend}</strong>:{" "}
+            Synced from <strong>{data.backends.length}</strong> backend
+            {data.backends.length === 1 ? "" : "s"}:{" "}
             <Badge tone={data.totalUpserted > 0 ? "emerald" : "amber"}>
               {data.totalUpserted} profile
               {data.totalUpserted === 1 ? "" : "s"}
             </Badge>
           </p>
-          {data.workspacesQueried.length > 0 ? (
-            <ul className="space-y-1 text-xs text-slate-600 dark:text-slate-400">
-              {data.workspacesQueried.map((w) => (
-                <li key={w.id} className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="font-medium text-slate-900 dark:text-slate-50">
-                    {w.name}
-                  </span>
-                  <span>
-                    {w.profilesFound} profile
-                    {w.profilesFound === 1 ? "" : "s"} found
-                  </span>
+          {data.backends.length > 0 ? (
+            <ul className="space-y-2 text-xs">
+              {data.backends.map((b) => (
+                <li
+                  key={b.backend}
+                  className="rounded border border-slate-200 dark:border-slate-700 p-2"
+                >
+                  <div className="font-medium text-slate-900 dark:text-slate-50">
+                    {b.backend}
+                  </div>
+                  <div className="text-slate-600 dark:text-slate-400">
+                    {b.profilesUpserted} upserted ·{" "}
+                    {b.workspaces.length} workspace
+                    {b.workspaces.length === 1 ? "" : "s"}
+                  </div>
                 </li>
               ))}
             </ul>
           ) : null}
           {data.totalUpserted === 0 ? (
             <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-100">
-              0 profiles found. Connect your social accounts in Ocoya first:
-              open{" "}
+              0 profiles upserted. Connect social accounts in your publisher
+              dashboard(s):{" "}
               <a
                 href="https://app.ocoya.com/"
                 target="_blank"
@@ -133,8 +139,16 @@ export function SyncProfilesButton() {
               >
                 app.ocoya.com
               </a>{" "}
-              → each workspace → Social profiles → connect each network, then
-              return here and sync again.
+              ·{" "}
+              <a
+                href="https://app.socialchamp.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-4 hover:text-amber-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500"
+              >
+                app.socialchamp.com
+              </a>
+              .
             </p>
           ) : null}
         </div>

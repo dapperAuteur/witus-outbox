@@ -80,8 +80,10 @@ async function scFetch(
  * Maps SocialChamp's `type` enum to outbox's canonical platform key.
  * Source: PDF page 1, Get All Profiles response schema.
  *
- * SocialChamp values: FB_PAGE | FB_GROUP | IN | IN_PAGE | TW | IG |
- * IG_BUSINESS | G_BUSINESS | PINIT_PAGE | TIKTOK | MST
+ * SocialChamp values seen in real responses: FB_PAGE | FB_GROUP | IN |
+ * IN_PAGE | TW | IG | IG_BUSINESS | G_BUSINESS | PINIT_PAGE | TIKTOK |
+ * MST | BSKY | YT (the PDF documented the first 11; BSKY + YT showed up
+ * in BAM's actual /v1/rest/profile response).
  *
  * Outbox canonical keys: twitter | instagram | facebook | linkedin |
  * youtube | bluesky | tiktok | pinterest (lib/publishers/types.ts).
@@ -105,6 +107,10 @@ function normalizeSocialChampType(raw: string | null | undefined): string {
     case "IG":
     case "IG_BUSINESS":
       return "instagram";
+    case "YT":
+      return "youtube";
+    case "BSKY":
+      return "bluesky";
     case "PINIT_PAGE":
       return "pinterest";
     case "TIKTOK":
@@ -161,6 +167,7 @@ const adapter: PublisherAdapter = {
       name?: string;
       type?: string;
       profileImg?: string | null;
+      workspaceId?: string | null;
     }>;
     if (!Array.isArray(body)) {
       console.error("[socialchamp] listProfiles returned non-array body");
@@ -174,12 +181,26 @@ const adapter: PublisherAdapter = {
         publisherProfileId: p.id,
         network: normalizeSocialChampType(p.type),
         displayName: typeof p.name === "string" && p.name.length > 0 ? p.name : null,
-        // SocialChamp's profile API doesn't expose a workspace concept; the
-        // API key already implies the workspace.
-        workspaceId: null,
+        // The PDF didn't show workspaceId on the response, but real
+        // /v1/rest/profile responses include it. Read whatever's there;
+        // SocialChamp users on a single workspace will see one value
+        // repeated, multi-workspace users get a useful grouping key.
+        workspaceId:
+          typeof p.workspaceId === "string" && p.workspaceId.length > 0
+            ? p.workspaceId
+            : null,
       });
     }
     return profiles;
+  },
+
+  /**
+   * SocialChamp's listProfiles already returns every profile across all
+   * workspaces in one call (the API key implies the user's whole tenant).
+   * No iteration needed.
+   */
+  async syncAllProfiles(): Promise<PublisherSocialProfile[]> {
+    return this.listProfiles();
   },
 
   /**
