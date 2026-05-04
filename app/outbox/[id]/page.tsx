@@ -194,6 +194,7 @@ export default async function OutboxDetail({
           status={status}
           hasPublisherPostId={Boolean(post.publisherPostId)}
           scheduledAtIso={post.scheduledAt.toISOString()}
+          publisherBackend={post.publisherBackend}
         />
       </section>
 

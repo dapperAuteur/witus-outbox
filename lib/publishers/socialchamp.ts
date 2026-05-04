@@ -28,9 +28,6 @@ import type {
 //   getPost(id), getPostsByStatus, updateScheduledAt, deletePost
 const SOCIALCHAMP_BASE = "https://api.socialchamp.com";
 
-const TODO_MARKER =
-  "SocialChamp endpoint not yet documented — add the PDF page or curl response and I'll wire it up";
-
 function getApiKey(): string | null {
   return getEnv().SOCIAL_CHAMP_API_KEY ?? null;
 }
@@ -43,20 +40,44 @@ function devLogId(): string {
   return `dev-log-${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 }
 
-interface ScErrorBody {
-  message?: string;
-  error?: string;
-  code?: string;
-  status?: boolean | number;
-}
-
+/**
+ * SocialChamp's documented error envelope (per
+ * developers.socialchamp.com/docs/error-handling):
+ *   { error: { code, message, details: [{field, issue}], requestId } }
+ *
+ * Older surfaces (and the 404 "Not found" BAM hit on guessed paths) use
+ * a flatter shape:
+ *   { status: false, message: "Not found" }
+ *
+ * Both are handled below. requestId is logged when present so support
+ * tickets can quote it.
+ */
 async function readErrorDetail(res: Response): Promise<string> {
+  let raw: unknown;
   try {
-    const body = (await res.json()) as ScErrorBody;
-    return body.message ?? body.error ?? body.code ?? `socialchamp-${res.status}`;
+    raw = await res.json();
   } catch {
     return `socialchamp-${res.status}`;
   }
+  if (!raw || typeof raw !== "object") return `socialchamp-${res.status}`;
+  const body = raw as Record<string, unknown>;
+  const errField = body.error;
+  if (errField && typeof errField === "object") {
+    const inner = errField as Record<string, unknown>;
+    const requestId =
+      typeof inner.requestId === "string" ? inner.requestId : null;
+    const message =
+      typeof inner.message === "string"
+        ? inner.message
+        : typeof inner.code === "string"
+          ? inner.code
+          : `socialchamp-${res.status}`;
+    return requestId ? `${message} requestId=${requestId}` : message;
+  }
+  if (typeof errField === "string") return errField;
+  if (typeof body.message === "string") return body.message;
+  if (typeof body.code === "string") return body.code;
+  return `socialchamp-${res.status}`;
 }
 
 async function scFetch(
@@ -267,9 +288,16 @@ const adapter: PublisherAdapter = {
       dateTime,
     }));
 
+    // Idempotency-Key per SocialChamp's API standards docs — write
+    // operations only. Each createPost call is a fresh attempt
+    // (operator-driven retries go through retryPost, which calls us
+    // again with no retained state); a fresh UUID matches that semantic.
+    const idempotencyKey = randomUUID();
+
     const res = await scFetch(apiKey, "/v1/rest/post", {
       method: "POST",
       body: JSON.stringify(items),
+      headers: { "Idempotency-Key": idempotencyKey },
     });
 
     if (!res.ok) {
@@ -277,6 +305,34 @@ const adapter: PublisherAdapter = {
       return { ok: false, status: res.status, detail };
     }
 
+    // Read the body verbatim and look for any id-like field. The PDF
+    // shows only {status, message} but real responses MAY include more
+    // (the Redoc spec was likely truncated when exported to PDF). When
+    // we find a real id, use it so getPost / cancel can target it later.
+    // When we don't, log the raw body once so the operator can see what
+    // SocialChamp actually returns and we can update the parser.
+    const rawText = await res.text();
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(rawText);
+    } catch {
+      parsedBody = null;
+    }
+
+    const realId = scanForId(parsedBody);
+    if (realId) {
+      console.log(
+        "[socialchamp] createPost ok external_id=%s (real id from response)",
+        realId
+      );
+      return { ok: true, externalId: realId };
+    }
+
+    // No id surfaced — log the body shape so we know what to add next time.
+    console.log(
+      "[socialchamp] createPost ok no_real_id_in_response body_preview=%s",
+      rawText.slice(0, 400)
+    );
     // Per the PDF, the success response is { status: 200, message: "Success" }
     // with no per-post id. We synthesize a stable external id from the
     // request payload so the row has SOMETHING to display, and so the
@@ -287,12 +343,29 @@ const adapter: PublisherAdapter = {
     return { ok: true, externalId: synthId };
   },
 
+  /**
+   * SocialChamp doesn't document a get-by-id endpoint in any PDF we have.
+   * Returning null instead of throwing so:
+   *   - The 15-min reconciler tick doesn't crash on SC rows.
+   *   - Manual Reconcile-now (lib/admin-actions.reconcileNowPost) returns
+   *     a clean "publisher_returned_nothing" instead of a 500.
+   * Slice 19e fills this in if SocialChamp's API is shown to support it.
+   */
   async getPost(_externalId: string): Promise<PublisherPostStatus | null> {
     void _externalId;
     if (!getApiKey()) return null;
-    throw new Error(`${TODO_MARKER} (getPost)`);
+    console.warn(
+      "[socialchamp] getPost not implemented — SocialChamp's public API doesn't document a get-by-id endpoint yet"
+    );
+    return null;
   },
 
+  /**
+   * Reconciler entry point. SocialChamp doesn't document a list-by-status
+   * endpoint, and createPost returns no per-post id, so there's nothing
+   * to reconcile against today. Returns empty so the tick handler skips
+   * SC workspaces gracefully.
+   */
   async getPostsByStatus(
     _statuses,
     _page,
@@ -301,13 +374,16 @@ const adapter: PublisherAdapter = {
     void _statuses;
     void _page;
     void _workspaceId;
-    if (!getApiKey()) return { posts: [], hasMore: false };
-    throw new Error(`${TODO_MARKER} (getPostsByStatus)`);
+    return { posts: [], hasMore: false };
   },
 
-  async updateScheduledAt(_externalId, _scheduledAt): Promise<void> {
-    void _externalId;
-    void _scheduledAt;
+  /**
+   * No documented update endpoint. We log so the operator knows the row's
+   * local scheduled_at moved but SocialChamp wasn't notified — the
+   * scheduled time inside SC is whatever the operator set when the post
+   * was originally created.
+   */
+  async updateScheduledAt(externalId, scheduledAt): Promise<void> {
     if (!getApiKey()) {
       if (isProduction()) {
         console.error(
@@ -320,11 +396,20 @@ const adapter: PublisherAdapter = {
       );
       return;
     }
-    throw new Error(`${TODO_MARKER} (updateScheduledAt)`);
+    console.warn(
+      "[socialchamp] updateScheduledAt is a local-only no-op — SocialChamp's public API doesn't document a PATCH endpoint (external_id=%s scheduled_at=%s)",
+      externalId,
+      scheduledAt.toISOString()
+    );
   },
 
-  async deletePost(_externalId): Promise<void> {
-    void _externalId;
+  /**
+   * Local-only cancel — outbox marks the row cancelled but SocialChamp's
+   * scheduled post stays in SocialChamp's queue. The operator must also
+   * delete it inside SocialChamp's UI to fully cancel. Slice 19e wires
+   * this when the API exposes a delete endpoint.
+   */
+  async deletePost(externalId): Promise<void> {
     if (!getApiKey()) {
       if (isProduction()) {
         console.error(
@@ -337,9 +422,46 @@ const adapter: PublisherAdapter = {
       );
       return;
     }
-    throw new Error(`${TODO_MARKER} (deletePost)`);
+    console.warn(
+      "[socialchamp] deletePost is a local-only no-op — also delete in SocialChamp's UI (external_id=%s)",
+      externalId
+    );
   },
 };
+
+/**
+ * Recursively walks a parsed JSON value looking for the first plausible
+ * post-id field. Used by createPost to surface any id SocialChamp
+ * returns even though the documented response sample only shows
+ * `{status, message}`. The Redoc spec sometimes truncates examples;
+ * real responses can carry more.
+ *
+ * Looks for: id, postId, post_id, _id (in nested objects too).
+ */
+function scanForId(value: unknown, depth = 0): string | null {
+  if (depth > 4 || value == null) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = scanForId(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    for (const key of ["id", "postId", "post_id", "_id"]) {
+      const v = obj[key];
+      if (typeof v === "string" && v.length > 0) return v;
+      if (typeof v === "number") return String(v);
+    }
+    // Recurse into nested objects (data, posts, items, etc.).
+    for (const key of ["data", "posts", "items", "result", "results"]) {
+      const found = scanForId(obj[key], depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
 
 const IMAGE_EXT = /\.(jpe?g|png|gif|webp|heic|bmp)(?:[?#].*)?$/i;
 const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv|avi)(?:[?#].*)?$/i;
