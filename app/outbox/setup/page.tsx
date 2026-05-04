@@ -6,6 +6,7 @@ import { getAuthOptions } from "@/lib/auth";
 import { DefaultProfilesPanel } from "@/components/DefaultProfilesPanel";
 import { OcoyaWorkspaceFetcher } from "@/components/OcoyaWorkspaceFetcher";
 import { RadaarExportButton } from "@/components/RadaarExportButton";
+import { SetupTabs } from "@/components/SetupTabs";
 import { SignOutButton } from "@/components/SignOutButton";
 import { SocialChampExportButton } from "@/components/SocialChampExportButton";
 import { SyncProfilesButton } from "@/components/SyncProfilesButton";
@@ -40,20 +41,24 @@ export default async function OutboxSetup() {
         </p>
         <h1 className="text-2xl font-semibold tracking-tight">Setup</h1>
         <p className="text-sm text-slate-600 dark:text-slate-400">
-          One-off bootstrap utilities. Use these to capture vendor IDs that
-          can&rsquo;t be auto-injected by an integration.
+          One-off bootstrap utilities, organized by publisher backend. The{" "}
+          <strong>Profiles</strong> tab covers the cross-backend operator
+          surface (sync + per-(workspace, network) defaults); each
+          backend-named tab holds setup specific to that vendor.
         </p>
       </div>
 
-      <OcoyaWorkspaceFetcher />
-
-      <SyncProfilesButton />
-
-      <DefaultProfilesPanel />
-
-      <RadaarExportButton />
-
-      <SocialChampExportButton />
+      <SetupTabs
+        common={
+          <>
+            <SyncProfilesButton />
+            <DefaultProfilesPanel />
+          </>
+        }
+        ocoya={<OcoyaWorkspaceFetcher />}
+        radaar={<RadaarExportButton />}
+        socialchamp={<SocialChampExportButton />}
+      />
     </main>
   );
 }
