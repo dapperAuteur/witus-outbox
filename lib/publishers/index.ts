@@ -1,6 +1,7 @@
 import "server-only";
 import { getEnv } from "@/lib/env";
 import { ocoyaAdapter } from "./ocoya";
+import { socialChampAdapter } from "./socialchamp";
 import type { PublisherAdapter } from "./types";
 
 /**
@@ -16,12 +17,11 @@ import type { PublisherAdapter } from "./types";
  * routes each row through the adapter that originally created it.
  */
 export function getPublisher(): PublisherAdapter {
-  const backend = getEnv().PUBLISHER_BACKEND;
-  if (backend === "ocoya") return ocoyaAdapter;
-  throw new Error(`Unknown PUBLISHER_BACKEND: ${backend}`);
+  return getPublisherByBackend(getEnv().PUBLISHER_BACKEND);
 }
 
 export function getPublisherByBackend(backend: string): PublisherAdapter {
   if (backend === "ocoya") return ocoyaAdapter;
+  if (backend === "socialchamp") return socialChampAdapter;
   throw new Error(`Unknown publisher backend: ${backend}`);
 }
