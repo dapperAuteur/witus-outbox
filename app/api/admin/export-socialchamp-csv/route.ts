@@ -78,11 +78,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     statuses = requested;
   }
 
+  const sourceParam = url.searchParams.get("source");
+  const sourceFilter = sourceParam?.trim().slice(0, 100) || null;
+
   const conditions: SQL[] = [inArray(scheduledPosts.status, statuses)];
   if (format === "youtube") {
     conditions.push(eq(scheduledPosts.platform, "youtube"));
   } else {
     conditions.push(ne(scheduledPosts.platform, "youtube"));
+  }
+  if (sourceFilter) {
+    conditions.push(eq(scheduledPosts.source, sourceFilter));
   }
 
   let rows: Array<{
@@ -131,13 +137,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     format === "youtube"
       ? exportToSocialChampYouTubeCsv(rows)
       : exportToSocialChampUniversalCsv(rows);
-  const filename = buildFilename({ format, statuses });
+  const filename = buildFilename({ format, statuses, source: sourceFilter });
 
   console.log(
-    "[admin/export-socialchamp-csv] format=%s rows=%d statuses=%s filename=%s",
+    "[admin/export-socialchamp-csv] format=%s rows=%d statuses=%s source=%s filename=%s",
     format,
     rows.length,
     statuses.join(","),
+    sourceFilter ?? "all",
     filename
   );
 
@@ -154,7 +161,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 function buildFilename(args: {
   format: "universal" | "youtube";
   statuses: readonly RowStatus[];
+  source: string | null;
 }): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 16);
-  return `socialchamp_${args.format}_${args.statuses.join("+")}_${stamp}.csv`;
+  const parts = ["socialchamp", args.format];
+  if (args.source) parts.push(args.source.replace(/[^a-z0-9-]+/gi, "-").slice(0, 30));
+  parts.push(args.statuses.join("+"));
+  parts.push(stamp);
+  return `${parts.join("_")}.csv`;
 }

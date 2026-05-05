@@ -25,6 +25,12 @@ export interface ComposeArgs {
   platforms: readonly Platform[];
   scheduledAt: Date;
   asDraft: boolean;
+  /**
+   * Optional per-platform profile selection. Map keys must match entries in
+   * `platforms`; missing keys / empty arrays mean "no override — fall back
+   * to (workspace, network) default at submit time."
+   */
+  profileIdsByPlatform?: Partial<Record<Platform, string[]>>;
 }
 
 export interface ComposeResult {
@@ -73,19 +79,23 @@ export async function createComposedRows(
       db
         .insert(scheduledPosts)
         .values(
-          args.platforms.map((platform) => ({
-            source: COMPOSER_SOURCE,
-            draftId: `composer-${baseId}-${platform}`,
-            platform,
-            caption: args.caption,
-            mediaUrls: args.mediaUrls,
-            links: [],
-            scheduledAt: args.scheduledAt,
-            status,
-            publisherBackend,
-            publisherWorkspaceId: workspaceId,
-            publisherProfileIdsOverride: null,
-          }))
+          args.platforms.map((platform) => {
+            const ids = args.profileIdsByPlatform?.[platform];
+            return {
+              source: COMPOSER_SOURCE,
+              draftId: `composer-${baseId}-${platform}`,
+              platform,
+              caption: args.caption,
+              mediaUrls: args.mediaUrls,
+              links: [],
+              scheduledAt: args.scheduledAt,
+              status,
+              publisherBackend,
+              publisherWorkspaceId: workspaceId,
+              publisherProfileIdsOverride:
+                ids && ids.length > 0 ? ids : null,
+            };
+          })
         )
         .returning({ id: scheduledPosts.id })
   );

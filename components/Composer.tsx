@@ -1,8 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Send, Save, Trash2, AlertTriangle } from "lucide-react";
+import {
+  AlertTriangle,
+  Download,
+  FileSpreadsheet,
+  Plus,
+  Save,
+  Send,
+  Trash2,
+} from "lucide-react";
 import { Switch } from "@headlessui/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +19,16 @@ import {
   platformLabel,
   type Platform,
 } from "@/lib/platforms";
+
+interface AvailableProfile {
+  publisherProfileId: string;
+  network: string;
+  displayName: string | null;
+}
+
+interface ProfilesByPlatform {
+  [platform: string]: AvailableProfile[];
+}
 
 /**
  * In-outbox composer (slice 31). Lets the operator create scheduled
@@ -40,8 +58,78 @@ export function Composer({
   const [platforms, setPlatforms] = useState<Set<Platform>>(() => new Set());
   const [scheduledLocal, setScheduledLocal] = useState(initialLocal);
   const [submitNow, setSubmitNow] = useState(false);
-  const [pending, setPending] = useState(false);
+  const [pending, setPending] = useState<null | "compose" | "csv-radaar" | "csv-socialchamp">(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Per-platform profile cache: pulled once from /api/admin/default-profiles
+  // and indexed by canonical network. Operator picks which profiles each
+  // selected platform should fan out to; defaults to ALL available so a
+  // first-time submit doesn't error with no_social_profile.
+  const [profilesByPlatform, setProfilesByPlatform] = useState<ProfilesByPlatform>({});
+  const [profileSelection, setProfileSelection] = useState<
+    Partial<Record<Platform, Set<string>>>
+  >({});
+  const [profilesLoaded, setProfilesLoaded] = useState(false);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch("/api/admin/default-profiles", {
+          cache: "no-store",
+        });
+        const body = await res.json();
+        if (!body.ok) {
+          if (!cancelled) {
+            setProfilesError(body.error ?? "failed to load profiles");
+            setProfilesLoaded(true);
+          }
+          return;
+        }
+        // Flatten across all workspaces of the active backend → indexed
+        // by network. Multi-workspace operators can refine via the
+        // per-row override on /outbox/[id] after save.
+        const byPlatform: ProfilesByPlatform = {};
+        type WorkspaceShape = {
+          backend: string;
+          byNetwork: Record<string, { available: AvailableProfile[] }>;
+        };
+        const workspaces: WorkspaceShape[] = Array.isArray(body.workspaces)
+          ? body.workspaces
+          : [];
+        for (const ws of workspaces) {
+          if (ws.backend !== body.activeBackend) continue;
+          for (const [network, slot] of Object.entries(ws.byNetwork)) {
+            if (!byPlatform[network]) byPlatform[network] = [];
+            for (const p of slot.available) {
+              if (
+                !byPlatform[network].some(
+                  (existing) => existing.publisherProfileId === p.publisherProfileId
+                )
+              ) {
+                byPlatform[network].push(p);
+              }
+            }
+          }
+        }
+        if (!cancelled) {
+          setProfilesByPlatform(byPlatform);
+          setProfilesLoaded(true);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const code = err instanceof Error ? err.name : "UnknownError";
+          setProfilesError(`Network error: ${code}`);
+          setProfilesLoaded(true);
+        }
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selectedPlatforms = useMemo(() => Array.from(platforms), [platforms]);
   const cleanedMediaUrls = useMemo(
@@ -71,6 +159,25 @@ export function Composer({
       else next.add(p);
       return next;
     });
+    // First-time platform selection: pre-check ALL available profiles for
+    // that platform. Saves a click for the common case (1 profile per
+    // network) and prevents the "submit now → no_social_profile" error.
+    setProfileSelection((cur) => {
+      if (cur[p]) return cur; // already initialized
+      const available = profilesByPlatform[p] ?? [];
+      const next = { ...cur };
+      next[p] = new Set(available.map((a) => a.publisherProfileId));
+      return next;
+    });
+  }
+
+  function toggleProfile(p: Platform, profileId: string) {
+    setProfileSelection((cur) => {
+      const set = new Set(cur[p] ?? []);
+      if (set.has(profileId)) set.delete(profileId);
+      else set.add(profileId);
+      return { ...cur, [p]: set };
+    });
   }
 
   function updateMediaUrl(i: number, value: string) {
@@ -88,19 +195,31 @@ export function Composer({
   }
 
   function canSubmit(): boolean {
-    if (pending) return false;
+    if (pending !== null) return false;
     if (caption.trim().length === 0) return false;
     if (selectedPlatforms.length === 0) return false;
     if (!scheduledLocal) return false;
     return true;
   }
 
-  async function submit() {
+  function buildProfileIdsByPlatform(): Partial<Record<Platform, string[]>> {
+    const out: Partial<Record<Platform, string[]>> = {};
+    for (const p of selectedPlatforms) {
+      const ids = Array.from(profileSelection[p] ?? []);
+      if (ids.length > 0) out[p] = ids;
+    }
+    return out;
+  }
+
+  async function compose(targetMode: "compose" | "csv-radaar" | "csv-socialchamp") {
     if (!canSubmit()) return;
-    setPending(true);
+    setPending(targetMode);
     setError(null);
     try {
       const iso = new Date(scheduledLocal).toISOString();
+      // CSV-export modes always save as drafts so the rows are recoverable
+      // and so the existing exporters can pick them up by source filter.
+      const asDraft = targetMode !== "compose" ? true : !submitNow;
       const res = await fetch("/api/admin/compose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -109,7 +228,8 @@ export function Composer({
           mediaUrls: cleanedMediaUrls,
           platforms: selectedPlatforms,
           scheduledAt: iso,
-          asDraft: !submitNow,
+          asDraft,
+          profileIdsByPlatform: buildProfileIdsByPlatform(),
         }),
       });
       const body = await res.json();
@@ -117,7 +237,22 @@ export function Composer({
         setError(body.error ?? `failed (${res.status})`);
         return;
       }
-      // Redirect to triage filtered to the rows we just created.
+      if (targetMode === "csv-radaar") {
+        // Trigger CSV download in same tab; status=all so drafts are included.
+        window.location.href =
+          "/api/admin/export-radaar-csv?source=outbox-composer&status=all";
+        return;
+      }
+      if (targetMode === "csv-socialchamp") {
+        // SocialChamp's exporter requires `format` — universal covers all
+        // non-YouTube; YouTube needs format=youtube. Send to the universal
+        // one; if all selected platforms were youtube, switch.
+        const allYouTube = selectedPlatforms.every((p) => p === "youtube");
+        const fmt = allYouTube ? "youtube" : "universal";
+        window.location.href = `/api/admin/export-socialchamp-csv?format=${fmt}&source=outbox-composer&status=all`;
+        return;
+      }
+      // Default "compose" mode → redirect to triage.
       router.push(
         submitNow
           ? "/outbox?source=outbox-composer"
@@ -128,7 +263,7 @@ export function Composer({
       const code = err instanceof Error ? err.name : "UnknownError";
       setError(`Network error: ${code}`);
     } finally {
-      setPending(false);
+      setPending(null);
     }
   }
 
@@ -201,6 +336,88 @@ export function Composer({
           </ul>
         </fieldset>
       </section>
+
+      {/* Profile picker per selected platform */}
+      {selectedPlatforms.length > 0 ? (
+        <section className="space-y-2">
+          <fieldset>
+            <legend className="block text-sm font-medium">
+              Profiles
+              <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
+                pick which account(s) each platform posts from
+              </span>
+            </legend>
+            {!profilesLoaded ? (
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Loading profile cache…
+              </p>
+            ) : profilesError ? (
+              <p
+                role="alert"
+                className="mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-800 dark:border-red-800 dark:bg-red-900/40 dark:text-red-200"
+              >
+                Could not load profiles ({profilesError}). Submit-now will
+                fall back to (workspace, network) defaults; if none exist
+                the row flips to error. Save as draft + edit on the detail
+                page is safer.
+              </p>
+            ) : (
+              <div className="mt-2 space-y-3">
+                {selectedPlatforms.map((p) => {
+                  const available = profilesByPlatform[p] ?? [];
+                  const selected = profileSelection[p] ?? new Set();
+                  return (
+                    <fieldset
+                      key={p}
+                      className="rounded border border-slate-200 dark:border-slate-700 p-3"
+                    >
+                      <legend className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                        {platformLabel(p)} ({available.length} available)
+                      </legend>
+                      {available.length === 0 ? (
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                          No {platformLabel(p)} profiles cached for this
+                          workspace. Sync at <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5">/outbox/setup</code>{" "}
+                          first, or submit-now will fail with{" "}
+                          <code className="rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5">no_social_profile</code>.
+                        </p>
+                      ) : (
+                        <ul className="space-y-1">
+                          {available.map((profile) => {
+                            const checked = selected.has(profile.publisherProfileId);
+                            return (
+                              <li key={profile.publisherProfileId}>
+                                <label className="flex items-start gap-2 cursor-pointer min-h-11 py-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() =>
+                                      toggleProfile(p, profile.publisherProfileId)
+                                    }
+                                    className="mt-1 size-5 rounded border-slate-300 text-violet-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500"
+                                  />
+                                  <div className="flex-1 min-w-0 space-y-0.5">
+                                    <span className="block text-sm">
+                                      {profile.displayName ?? "(unnamed)"}
+                                    </span>
+                                    <span className="block font-mono text-[11px] text-slate-500 dark:text-slate-400 break-all">
+                                      {profile.publisherProfileId}
+                                    </span>
+                                  </div>
+                                </label>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </fieldset>
+                  );
+                })}
+              </div>
+            )}
+          </fieldset>
+        </section>
+      ) : null}
 
       {/* Media URLs */}
       <section className="space-y-2">
@@ -299,20 +516,52 @@ export function Composer({
           <Button
             type="button"
             variant="primary"
-            onClick={submit}
+            onClick={() => compose("compose")}
             disabled={!canSubmit()}
           >
             {submitNow ? (
               <>
                 <Send className="size-4" aria-hidden="true" />
-                <span>{pending ? "Submitting…" : `Submit ${selectedPlatforms.length || ""} ${selectedPlatforms.length === 1 ? "post" : "posts"}`.trim()}</span>
+                <span>
+                  {pending === "compose"
+                    ? "Submitting…"
+                    : `Submit ${selectedPlatforms.length || ""} ${selectedPlatforms.length === 1 ? "post" : "posts"}`.trim()}
+                </span>
               </>
             ) : (
               <>
                 <Save className="size-4" aria-hidden="true" />
-                <span>{pending ? "Saving…" : `Save ${selectedPlatforms.length || ""} ${selectedPlatforms.length === 1 ? "draft" : "drafts"}`.trim()}</span>
+                <span>
+                  {pending === "compose"
+                    ? "Saving…"
+                    : `Save ${selectedPlatforms.length || ""} ${selectedPlatforms.length === 1 ? "draft" : "drafts"}`.trim()}
+                </span>
               </>
             )}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => compose("csv-radaar")}
+            disabled={!canSubmit()}
+            title="Save drafts and download as a RADAAR-format CSV"
+          >
+            <Download className="size-4" aria-hidden="true" />
+            <span>
+              {pending === "csv-radaar" ? "Building CSV…" : "Save + RADAAR CSV"}
+            </span>
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => compose("csv-socialchamp")}
+            disabled={!canSubmit()}
+            title="Save drafts and download as a SocialChamp-format CSV"
+          >
+            <FileSpreadsheet className="size-4" aria-hidden="true" />
+            <span>
+              {pending === "csv-socialchamp" ? "Building CSV…" : "Save + SocialChamp CSV"}
+            </span>
           </Button>
         </div>
 
