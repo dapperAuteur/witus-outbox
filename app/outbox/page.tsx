@@ -14,6 +14,7 @@ import type { ScheduledPostStatus } from "@/components/StatusBadge";
 export const dynamic = "force-dynamic";
 
 const VALID_STATUSES: ScheduledPostStatus[] = [
+  "draft",
   "queued",
   "submitted",
   "scheduled",
@@ -24,6 +25,7 @@ const VALID_STATUSES: ScheduledPostStatus[] = [
 
 const STATUS_LABEL: Record<ScheduledPostStatus | "all", string> = {
   all: "All",
+  draft: "Draft",
   queued: "Queued",
   submitted: "Submitted",
   scheduled: "Scheduled",

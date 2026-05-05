@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 
 export type ScheduledPostStatus =
+  | "draft"
   | "queued"
   | "submitted"
   | "scheduled"
@@ -10,8 +11,9 @@ export type ScheduledPostStatus =
 
 const statusTone: Record<
   ScheduledPostStatus,
-  "sky" | "violet" | "amber" | "emerald" | "red" | "muted"
+  "sky" | "violet" | "amber" | "emerald" | "red" | "muted" | "slate"
 > = {
+  draft: "slate",
   queued: "sky",
   submitted: "violet",
   scheduled: "amber",
@@ -21,6 +23,7 @@ const statusTone: Record<
 };
 
 const statusLabel: Record<ScheduledPostStatus, string> = {
+  draft: "Draft",
   queued: "Queued",
   submitted: "Submitted",
   scheduled: "Scheduled",

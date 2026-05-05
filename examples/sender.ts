@@ -49,6 +49,19 @@ export interface OutboxSubmission {
    * with their ids.
    */
   social_profile_ids?: string[];
+  /**
+   * When true (slice 30), outbox lands the row as `status=draft` instead
+   * of `queued`, skips the auto-submit to the publisher, and waives the
+   * 5-minute lead-time check on `scheduled_at` (drafts use a placeholder;
+   * the operator picks the real time when promoting in /outbox/[id]).
+   *
+   * Use this for "operator-reviewed" patterns where the publisher product
+   * doesn't make the final go/no-go decision — e.g. FlyWitUS flight logs
+   * that BAM reviews before publishing. `social_profile_ids` validation
+   * is also skipped on drafts; operator can edit profile selection during
+   * review via the detail-page UI.
+   */
+  as_draft?: boolean;
 }
 
 export interface SendArgs {
@@ -68,11 +81,13 @@ export interface SendResult {
   id?: string;
   /**
    * Receiver-side row status echoed in the response body. `"queued"` means
-   * the row was freshly created. Any other value (`"submitted"`, `"error"`,
-   * `"posted"`, `"cancelled"`, `"scheduled"`) means an existing row was
-   * matched on `(source, external_ref)` — the POST was idempotent. Callers
-   * can use this to distinguish freshly-created vs duplicate from one HTTP
-   * round trip.
+   * the row was freshly created and the auto-submit pipeline is firing.
+   * `"draft"` means the row was created with `as_draft: true` and is
+   * waiting for operator review on /outbox/[id]. Any other value
+   * (`"submitted"`, `"error"`, `"posted"`, `"cancelled"`, `"scheduled"`)
+   * means an existing row was matched on `(source, external_ref)` —
+   * the POST was idempotent. Callers can use this to distinguish
+   * freshly-created vs duplicate from one HTTP round trip.
    */
   recordStatus?: string;
   /** Raw response body when `ok` is false; useful for logs. */

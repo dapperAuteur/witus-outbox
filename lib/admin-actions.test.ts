@@ -64,6 +64,7 @@ vi.mock("@/lib/alerts", () => ({ sendOutboxAlert: alertSpy }));
 
 import {
   cancelPost,
+  promoteDraftPost,
   reconcileNowPost,
   reschedulePost,
   retryPost,
@@ -458,5 +459,92 @@ describe("reconcileNowPost", () => {
     });
     const r = await reconcileNowPost(baseRow.id);
     expect(r.status).toBe("submitted"); // original status
+  });
+});
+
+describe("promoteDraftPost", () => {
+  const draftRow = { ...baseRow, status: "draft" as const };
+
+  it("rejects scheduledAt less than 5 min in the future", async () => {
+    const r = await promoteDraftPost(
+      baseRow.id,
+      new Date(Date.now() + 60_000)
+    );
+    expect(r).toEqual({ ok: false, error: "must_be_5min_in_future" });
+    // Short-circuits before the DB lookup.
+    expect(findFirstScheduled).not.toHaveBeenCalled();
+  });
+
+  it("returns not_found when row is missing", async () => {
+    findFirstScheduled.mockResolvedValue(undefined);
+    const r = await promoteDraftPost(
+      baseRow.id,
+      new Date(Date.now() + 60 * 60_000)
+    );
+    expect(r).toEqual({ ok: false, error: "not_found" });
+  });
+
+  it("refuses to promote a non-draft row", async () => {
+    findFirstScheduled.mockResolvedValueOnce({ ...baseRow, status: "queued" });
+    const r = await promoteDraftPost(
+      baseRow.id,
+      new Date(Date.now() + 60 * 60_000)
+    );
+    expect(r).toEqual({ ok: false, error: "cannot_promote_queued" });
+  });
+
+  it("refuses to promote a posted row (terminal protection)", async () => {
+    findFirstScheduled.mockResolvedValueOnce({ ...baseRow, status: "posted" });
+    const r = await promoteDraftPost(
+      baseRow.id,
+      new Date(Date.now() + 60 * 60_000)
+    );
+    expect(r).toEqual({ ok: false, error: "cannot_promote_posted" });
+  });
+
+  it("flips draft → queued + scheduledAt then submits to publisher", async () => {
+    const newAt = new Date(Date.now() + 60 * 60_000);
+    // First findFirst: promoteDraftPost reads the row to validate status.
+    // Second findFirst: retryPost (delegated) re-reads after the update —
+    // by which point the row should look like queued. The mock ignores
+    // the .where() args, so we sequence via mockResolvedValueOnce.
+    findFirstScheduled
+      .mockResolvedValueOnce(draftRow)
+      .mockResolvedValueOnce({ ...draftRow, status: "queued", scheduledAt: newAt });
+    publisherMock.createPost.mockResolvedValue({
+      ok: true,
+      externalId: "OCOYA-PROMOTED-1",
+    });
+
+    const r = await promoteDraftPost(baseRow.id, newAt);
+
+    expect(r).toEqual({
+      ok: true,
+      status: "submitted",
+      publisherPostId: "OCOYA-PROMOTED-1",
+    });
+    // The status update wrote both fields together
+    expect(setSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "queued", scheduledAt: newAt })
+    );
+    expect(publisherMock.createPost).toHaveBeenCalled();
+  });
+
+  it("propagates retryPost failure when publisher 4xx's", async () => {
+    const newAt = new Date(Date.now() + 60 * 60_000);
+    findFirstScheduled
+      .mockResolvedValueOnce(draftRow)
+      .mockResolvedValueOnce({ ...draftRow, status: "queued", scheduledAt: newAt });
+    publisherMock.createPost.mockResolvedValue({
+      ok: false,
+      status: 400,
+      detail: "invalid_caption",
+    });
+
+    const r = await promoteDraftPost(baseRow.id, newAt);
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("invalid_caption");
+    expect(r.status).toBe("error");
   });
 });
