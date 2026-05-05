@@ -29,8 +29,12 @@ const {
 // Drizzle's update/insert is a thenable chain:
 //   await db.update(table).set({...}).where(...)
 //   await db.insert(table).values({...})
-// We capture the .set() and .values() args via spies; the `.where()` and
-// terminal awaits resolve to undefined.
+//   await db.insert(table).values({...}).returning({id})
+// We capture the .set() and .values() args via spies; the .where() and
+// terminal awaits resolve to undefined unless the test sets
+// returningResultRef.current to an array of {id} for copyPost-style flows.
+const returningResultRef: { current: Array<{ id: string }> } = { current: [] };
+
 function makeDb() {
   const updateBuilder = {
     set: (args: unknown) => {
@@ -40,10 +44,21 @@ function makeDb() {
       };
     },
   };
+  // Two callers: db.insert(t).values({...}) → just await (publishAttempts
+  // logging path), and db.insert(t).values({...}).returning({...}) → returns
+  // an array of {id} (copyPost / composer-actions). Make the awaitable
+  // resolve to [] by default; tests can override returningResultRef before
+  // calling the action under test.
   const insertBuilder = {
     values: (args: unknown) => {
       insertValuesSpy(args);
-      return Promise.resolve();
+      const result = Object.assign(
+        Promise.resolve(returningResultRef.current),
+        {
+          returning: () => Promise.resolve(returningResultRef.current),
+        }
+      );
+      return result;
     },
   };
   return {
@@ -64,6 +79,8 @@ vi.mock("@/lib/alerts", () => ({ sendOutboxAlert: alertSpy }));
 
 import {
   cancelPost,
+  copyPost,
+  editPost,
   promoteDraftPost,
   reconcileNowPost,
   reschedulePost,
@@ -108,6 +125,7 @@ afterEach(() => {
   publisherMock.updateScheduledAt.mockReset();
   resolveMock.mockReset();
   alertSpy.mockReset();
+  returningResultRef.current = [];
 });
 
 describe("retryPost", () => {
@@ -546,5 +564,124 @@ describe("promoteDraftPost", () => {
     expect(r.ok).toBe(false);
     expect(r.error).toBe("invalid_caption");
     expect(r.status).toBe("error");
+  });
+});
+
+describe("editPost", () => {
+  it("returns not_found when row is missing", async () => {
+    findFirstScheduled.mockResolvedValue(undefined);
+    const r = await editPost(baseRow.id, { caption: "new" });
+    expect(r).toEqual({ ok: false, error: "not_found" });
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses to edit submitted rows (publisher owns content)", async () => {
+    findFirstScheduled.mockResolvedValue({ ...baseRow, status: "submitted" });
+    const r = await editPost(baseRow.id, { caption: "new" });
+    expect(r).toEqual({ ok: false, error: "cannot_edit_submitted" });
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses to edit posted rows", async () => {
+    findFirstScheduled.mockResolvedValue({ ...baseRow, status: "posted" });
+    const r = await editPost(baseRow.id, { caption: "new" });
+    expect(r).toEqual({ ok: false, error: "cannot_edit_posted" });
+  });
+
+  it("refuses to edit scheduled rows", async () => {
+    findFirstScheduled.mockResolvedValue({ ...baseRow, status: "scheduled" });
+    const r = await editPost(baseRow.id, { caption: "new" });
+    expect(r).toEqual({ ok: false, error: "cannot_edit_scheduled" });
+  });
+
+  it("returns no_changes when neither caption nor mediaUrls is supplied", async () => {
+    findFirstScheduled.mockResolvedValue(baseRow);
+    const r = await editPost(baseRow.id, {});
+    expect(r).toEqual({ ok: false, error: "no_changes" });
+    expect(setSpy).not.toHaveBeenCalled();
+  });
+
+  it("updates caption only when only caption is supplied", async () => {
+    findFirstScheduled.mockResolvedValue(baseRow);
+    const r = await editPost(baseRow.id, { caption: "edited copy" });
+    expect(r).toEqual({ ok: true, status: "queued" });
+    expect(setSpy).toHaveBeenCalledTimes(1);
+    const update = setSpy.mock.calls[0][0] as Record<string, unknown>;
+    expect(update.caption).toBe("edited copy");
+    expect(update.mediaUrls).toBeUndefined();
+    expect(update.updatedAt).toBeInstanceOf(Date);
+  });
+
+  it("updates mediaUrls only when only mediaUrls is supplied", async () => {
+    findFirstScheduled.mockResolvedValue(baseRow);
+    const r = await editPost(baseRow.id, {
+      mediaUrls: ["https://example.com/a.png", "https://example.com/b.png"],
+    });
+    expect(r).toEqual({ ok: true, status: "queued" });
+    const update = setSpy.mock.calls[0][0] as Record<string, unknown>;
+    expect(update.caption).toBeUndefined();
+    expect(update.mediaUrls).toEqual([
+      "https://example.com/a.png",
+      "https://example.com/b.png",
+    ]);
+  });
+
+  it("allows editing draft / queued / error / cancelled rows", async () => {
+    for (const status of ["draft", "queued", "error", "cancelled"] as const) {
+      findFirstScheduled.mockResolvedValueOnce({ ...baseRow, status });
+      const r = await editPost(baseRow.id, { caption: `for-${status}` });
+      expect(r.ok).toBe(true);
+      expect(r.status).toBe(status);
+    }
+  });
+});
+
+describe("copyPost", () => {
+  it("returns not_found when row is missing", async () => {
+    findFirstScheduled.mockResolvedValue(undefined);
+    const r = await copyPost(baseRow.id);
+    expect(r).toEqual({ ok: false, error: "not_found" });
+  });
+
+  it("clones a draft into a new draft and returns the new id", async () => {
+    findFirstScheduled.mockResolvedValue({ ...baseRow, status: "draft" });
+    returningResultRef.current = [{ id: "new-uuid-here" }];
+    const r = await copyPost(baseRow.id);
+    expect(r.ok).toBe(true);
+    expect(r.status).toBe("draft");
+    expect(r.newId).toBe("new-uuid-here");
+    const inserted = insertValuesSpy.mock.calls[0][0] as Record<string, unknown>;
+    expect(inserted.caption).toBe(baseRow.caption);
+    expect(inserted.platform).toBe(baseRow.platform);
+    expect(inserted.status).toBe("draft");
+    // Fresh draft_id, not the original
+    expect(inserted.draftId).not.toBe(baseRow.draftId);
+    expect(inserted.draftId).toMatch(/^copy-[0-9a-f]+-twitter$/);
+  });
+
+  it("clones a posted row into a fresh draft (any-status copy)", async () => {
+    findFirstScheduled.mockResolvedValue({
+      ...baseRow,
+      status: "posted",
+      publisherPostId: "OCOYA-already-posted",
+    });
+    returningResultRef.current = [{ id: "fresh-id" }];
+    const r = await copyPost(baseRow.id);
+    expect(r.ok).toBe(true);
+    expect(r.status).toBe("draft");
+    const inserted = insertValuesSpy.mock.calls[0][0] as Record<string, unknown>;
+    // Critical: the new row must NOT carry the old publisher_post_id.
+    // The reconciler treats publisher_post_id as the publisher-side
+    // pointer; cloning that would make two outbox rows fight over the
+    // same publisher post.
+    expect(inserted.publisherPostId).toBeUndefined();
+    expect(inserted.status).toBe("draft");
+  });
+
+  it("returns insert_failed when the returning() result is empty", async () => {
+    findFirstScheduled.mockResolvedValue({ ...baseRow, status: "draft" });
+    returningResultRef.current = [];
+    const r = await copyPost(baseRow.id);
+    expect(r).toEqual({ ok: false, error: "insert_failed" });
   });
 });

@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { publishAttempts, scheduledPosts } from "@/db/schema";
@@ -298,4 +299,106 @@ export async function reconcileNowPost(id: string): Promise<ActionResult> {
     status: nextStatus,
     publisherPostId: row.publisherPostId,
   };
+}
+
+const EDITABLE_STATUSES = new Set([
+  "draft",
+  "queued",
+  "error",
+  "cancelled",
+]);
+
+export interface EditPostArgs {
+  caption?: string;
+  mediaUrls?: string[];
+}
+
+/**
+ * Edits a row's caption and/or mediaUrls (slice 33). Allowed only when
+ * the row's status is in EDITABLE_STATUSES — once a post is in the
+ * publisher's queue (submitted / scheduled / posted), the publisher owns
+ * the content and the local row is frozen. Reschedule is the separate
+ * lever for time changes that the publisher CAN honor post-submit.
+ *
+ * Returns ok=false with cannot_edit_<status> when blocked. Returns
+ * not_found when the id doesn't exist.
+ */
+export async function editPost(
+  id: string,
+  args: EditPostArgs
+): Promise<ActionResult> {
+  const db = getDb();
+  const row = await db.query.scheduledPosts.findFirst({
+    where: eq(scheduledPosts.id, id),
+  });
+  if (!row) return { ok: false, error: "not_found" };
+  if (!EDITABLE_STATUSES.has(row.status)) {
+    return { ok: false, error: `cannot_edit_${row.status}` };
+  }
+  if (args.caption === undefined && args.mediaUrls === undefined) {
+    return { ok: false, error: "no_changes" };
+  }
+
+  const update: Record<string, unknown> = { updatedAt: new Date() };
+  if (args.caption !== undefined) update.caption = args.caption;
+  if (args.mediaUrls !== undefined) update.mediaUrls = args.mediaUrls;
+
+  await db
+    .update(scheduledPosts)
+    .set(update)
+    .where(eq(scheduledPosts.id, id));
+
+  return { ok: true, status: row.status };
+}
+
+/**
+ * Clones a row into a fresh draft (slice 33). Works on any status — even
+ * `posted` rows can be copied to "post this again" or "post a variation."
+ * The new row carries:
+ *   - same caption, mediaUrls, links, platform, publisher_backend,
+ *     publisher_workspace_id, publisher_profile_ids_override
+ *   - source = original.source (so filtering by source still groups them)
+ *   - draft_id = `copy-{shortuuid}-{platform}` so the (source, draft_id)
+ *     UNIQUE constraint holds
+ *   - status = "draft"
+ *   - scheduledAt = now + 7 days (placeholder; operator picks at promote)
+ *   - publisher_post_id = null (it's a fresh row; reconciler doesn't
+ *     touch the original publisher post)
+ *
+ * Returns the new row id so the caller can navigate the operator there.
+ */
+export async function copyPost(
+  id: string
+): Promise<ActionResult & { newId?: string }> {
+  const db = getDb();
+  const row = await db.query.scheduledPosts.findFirst({
+    where: eq(scheduledPosts.id, id),
+  });
+  if (!row) return { ok: false, error: "not_found" };
+
+  const newDraftId = `copy-${randomUUID().slice(0, 8)}-${row.platform}`;
+  const newScheduledAt = new Date(Date.now() + 7 * 24 * 60 * 60_000);
+
+  const inserted = await db
+    .insert(scheduledPosts)
+    .values({
+      source: row.source,
+      draftId: newDraftId,
+      platform: row.platform,
+      caption: row.caption,
+      mediaUrls: row.mediaUrls,
+      links: row.links,
+      scheduledAt: newScheduledAt,
+      status: "draft",
+      publisherBackend: row.publisherBackend,
+      publisherWorkspaceId: row.publisherWorkspaceId,
+      publisherProfileIdsOverride: row.publisherProfileIdsOverride,
+    })
+    .returning({ id: scheduledPosts.id });
+
+  const newId = inserted[0]?.id;
+  if (!newId) {
+    return { ok: false, error: "insert_failed" };
+  }
+  return { ok: true, status: "draft", newId };
 }

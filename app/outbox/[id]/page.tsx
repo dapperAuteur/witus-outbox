@@ -6,7 +6,9 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { publishAttempts, scheduledPosts, socialProfiles } from "@/db/schema";
 import { Badge } from "@/components/ui/badge";
+import { CopyPostButton } from "@/components/CopyPostButton";
 import { DraftScheduler } from "@/components/DraftScheduler";
+import { EditPostForm } from "@/components/EditPostForm";
 import { PostActions } from "@/components/PostActions";
 import { RowProfileOverride } from "@/components/RowProfileOverride";
 import { StatusBadge, type ScheduledPostStatus } from "@/components/StatusBadge";
@@ -89,6 +91,11 @@ export default async function OutboxDetail({
   const links = asStringArray(post.links);
   const status = post.status as ScheduledPostStatus;
   const errorDetail = post.publisherErrorDetail as Record<string, unknown> | null;
+  const isEditable =
+    status === "draft" ||
+    status === "queued" ||
+    status === "error" ||
+    status === "cancelled";
 
   return (
     <main
@@ -221,12 +228,28 @@ export default async function OutboxDetail({
         aria-labelledby="caption-heading"
         className="rounded-lg border border-slate-200 bg-white p-5 sm:p-6 dark:border-slate-800 dark:bg-slate-900 space-y-3"
       >
-        <h2 id="caption-heading" className="text-base font-medium">
-          Caption
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="caption-heading" className="text-base font-medium">
+            Caption + Media
+          </h2>
+          <CopyPostButton postId={post.id} />
+        </div>
         <p className="whitespace-pre-wrap break-words text-sm text-slate-900 dark:text-slate-50">
           {post.caption}
         </p>
+        {isEditable ? (
+          <EditPostForm
+            postId={post.id}
+            initialCaption={post.caption}
+            initialMediaUrls={mediaUrls}
+          />
+        ) : (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Caption + media are locked once a row reaches{" "}
+            <strong>{status}</strong>. Use Copy to clone into a fresh draft
+            with editable content.
+          </p>
+        )}
       </section>
 
       {mediaUrls.length > 0 ? (
