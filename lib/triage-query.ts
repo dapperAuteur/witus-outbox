@@ -4,6 +4,7 @@ import { scheduledPosts } from "@/db/schema";
 import type { ScheduledPostStatus } from "@/components/StatusBadge";
 
 const VALID_STATUSES: readonly ScheduledPostStatus[] = [
+  "draft",
   "queued",
   "submitted",
   "scheduled",

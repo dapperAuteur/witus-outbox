@@ -6,6 +6,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { publishAttempts, scheduledPosts, socialProfiles } from "@/db/schema";
 import { Badge } from "@/components/ui/badge";
+import { DraftScheduler } from "@/components/DraftScheduler";
 import { PostActions } from "@/components/PostActions";
 import { RowProfileOverride } from "@/components/RowProfileOverride";
 import { StatusBadge, type ScheduledPostStatus } from "@/components/StatusBadge";
@@ -188,15 +189,22 @@ export default async function OutboxDetail({
         className="rounded-lg border border-slate-200 bg-white p-5 sm:p-6 dark:border-slate-800 dark:bg-slate-900 space-y-3"
       >
         <h2 id="actions-heading" className="text-base font-medium">
-          Actions
+          {status === "draft" ? "Schedule" : "Actions"}
         </h2>
-        <PostActions
-          postId={post.id}
-          status={status}
-          hasPublisherPostId={Boolean(post.publisherPostId)}
-          scheduledAtIso={post.scheduledAt.toISOString()}
-          publisherBackend={post.publisherBackend}
-        />
+        {status === "draft" ? (
+          <DraftScheduler
+            postId={post.id}
+            defaultScheduledAtIso={post.scheduledAt.toISOString()}
+          />
+        ) : (
+          <PostActions
+            postId={post.id}
+            status={status}
+            hasPublisherPostId={Boolean(post.publisherPostId)}
+            scheduledAtIso={post.scheduledAt.toISOString()}
+            publisherBackend={post.publisherBackend}
+          />
+        )}
       </section>
 
       <section

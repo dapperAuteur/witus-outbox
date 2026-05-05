@@ -13,6 +13,7 @@ import {
 import type { AdapterAccount } from "next-auth/adapters";
 
 export const scheduledPostStatus = pgEnum("scheduled_post_status", [
+  "draft",
   "queued",
   "submitted",
   "scheduled",

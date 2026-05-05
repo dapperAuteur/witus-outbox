@@ -18,36 +18,49 @@ export const dynamic = "force-dynamic";
 
 const SCHEDULED_AT_MIN_LEAD_SECONDS = 5 * 60;
 
-const IngestPayload = z.object({
-  external_ref: z.string().min(1).max(255),
-  platform: z.enum(PLATFORMS),
-  caption: z.string().min(1).max(10_000),
-  media_urls: z
-    .array(z.string().url().regex(/^https:\/\//, "media URLs must be https"))
-    .max(20)
-    .default([]),
-  links: z.array(z.string().url()).max(20).optional(),
-  scheduled_at: z
-    .string()
-    .datetime({ offset: true })
-    .refine(
-      (v) => {
-        const t = Date.parse(v);
-        if (Number.isNaN(t)) return false;
-        return t >= Date.now() + SCHEDULED_AT_MIN_LEAD_SECONDS * 1000;
-      },
-      "scheduled_at must be at least 5 minutes in the future"
-    ),
-  /**
-   * Optional per-row profile selection from the publisher (slice 21).
-   * When present, takes precedence over the workspace default and the
-   * any-match fallback. Each id must exist in the local social_profile
-   * cache for the resolved (publisher_backend, workspace_id) — invalid
-   * ids are rejected at ingest with 400 + {unknown: string[]} so a
-   * misconfigured publisher gets immediate feedback.
-   */
-  social_profile_ids: z.array(z.string().min(1)).max(20).optional(),
-});
+const IngestPayload = z
+  .object({
+    external_ref: z.string().min(1).max(255),
+    platform: z.enum(PLATFORMS),
+    caption: z.string().min(1).max(10_000),
+    media_urls: z
+      .array(z.string().url().regex(/^https:\/\//, "media URLs must be https"))
+      .max(20)
+      .default([]),
+    links: z.array(z.string().url()).max(20).optional(),
+    scheduled_at: z.string().datetime({ offset: true }),
+    /**
+     * Optional per-row profile selection from the publisher (slice 21).
+     * When present, takes precedence over the workspace default and the
+     * any-match fallback. Each id must exist in the local social_profile
+     * cache for the resolved (publisher_backend, workspace_id) — invalid
+     * ids are rejected at ingest with 400 + {unknown: string[]} so a
+     * misconfigured publisher gets immediate feedback.
+     */
+    social_profile_ids: z.array(z.string().min(1)).max(20).optional(),
+    /**
+     * Slice 30 — when true, the row lands as `status=draft` instead of
+     * `queued`, no auto-submit fires, and the 5-min lead-time check on
+     * scheduled_at is skipped (drafts use placeholder timestamps; the
+     * operator picks the real time when promoting via /outbox/[id]).
+     * Used for the FlyWitUS flight-log → operator-reviewed pattern; the
+     * future in-outbox composer's "save as draft" path uses the same
+     * branch internally.
+     */
+    as_draft: z.boolean().default(false),
+  })
+  .refine(
+    (data) => {
+      if (data.as_draft) return true;
+      const t = Date.parse(data.scheduled_at);
+      if (Number.isNaN(t)) return false;
+      return t >= Date.now() + SCHEDULED_AT_MIN_LEAD_SECONDS * 1000;
+    },
+    {
+      message: "scheduled_at must be at least 5 minutes in the future (or set as_draft: true)",
+      path: ["scheduled_at"],
+    }
+  );
 
 function reject(status: number): NextResponse {
   return NextResponse.json({ ok: false }, { status });
@@ -147,8 +160,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Stored on publisher_profile_ids_override so the resolver picks it
   // up via the same row-override branch slice 20 added — and so the
   // operator can clear/edit it from the detail-page UI if needed.
+  //
+  // Slice 30: skip this validation when as_draft=true. Drafts haven't
+  // resolved their final destination yet — the operator may edit profile
+  // ids during review via /outbox/[id]'s row-override UI before promote.
+  // Validating now would reject perfectly-fine FlyWitUS payloads where
+  // the publisher product doesn't yet know which workspace's profiles
+  // exist.
   const payloadProfileIds = parsed.data.social_profile_ids ?? [];
-  if (payloadProfileIds.length > 0) {
+  if (payloadProfileIds.length > 0 && !parsed.data.as_draft) {
     const profileWhere = workspaceId
       ? and(
           eq(socialProfiles.publisherBackend, publisher.backend),
@@ -176,6 +196,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  const insertStatus = parsed.data.as_draft ? "draft" : "queued";
+
   const insertResult = await safeDbWrite(
     {
       op: "scheduled_post.insert",
@@ -193,7 +215,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           mediaUrls: parsed.data.media_urls,
           links: parsed.data.links ?? [],
           scheduledAt,
-          status: "queued",
+          status: insertStatus,
           publisherBackend: publisher.backend,
           publisherWorkspaceId: workspaceId,
           publisherProfileIdsOverride:
@@ -212,28 +234,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   console.log(
-    "[ingest] accepted source=%s platform=%s id=%s",
+    "[ingest] accepted source=%s platform=%s id=%s status=%s",
     source,
     parsed.data.platform,
-    id
+    id,
+    insertStatus
   );
 
-  after(() =>
-    submitToPublisher({
-      id,
-      source,
-      platform: parsed.data.platform,
-      scheduledAt,
-      caption: parsed.data.caption,
-      mediaUrls: parsed.data.media_urls,
-      workspaceId: workspaceId ?? undefined,
-      profileIdsOverride:
-        payloadProfileIds.length > 0 ? payloadProfileIds : undefined,
-    })
-  );
+  // Drafts wait for an operator promote — no after() submit. Promote
+  // path lives in lib/admin-actions.ts promoteDraftPost (POST to
+  // /api/admin/scheduled-posts/[id]/promote).
+  if (!parsed.data.as_draft) {
+    after(() =>
+      submitToPublisher({
+        id,
+        source,
+        platform: parsed.data.platform,
+        scheduledAt,
+        caption: parsed.data.caption,
+        mediaUrls: parsed.data.media_urls,
+        workspaceId: workspaceId ?? undefined,
+        profileIdsOverride:
+          payloadProfileIds.length > 0 ? payloadProfileIds : undefined,
+      })
+    );
+  }
 
   return NextResponse.json(
-    { ok: true, id, status: "queued" },
+    { ok: true, id, status: insertStatus },
     { status: 200 }
   );
 }

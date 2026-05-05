@@ -132,6 +132,45 @@ export async function retryPost(id: string): Promise<ActionResult> {
 }
 
 /**
+ * Promotes a draft row to queued + immediately submits to the publisher
+ * (slice 30). Validates the row is `status=draft`, that the supplied
+ * `scheduledAt` is at least 5 min in the future, then sets the new
+ * scheduled time + status=queued and runs the same submit flow as
+ * `retryPost`. Used by the operator's Schedule UI on /outbox/[id] for
+ * draft rows arriving from FlyWitUS (and, eventually, the in-outbox
+ * composer's "save as draft → schedule later" path).
+ */
+export async function promoteDraftPost(
+  id: string,
+  scheduledAt: Date
+): Promise<ActionResult> {
+  if (scheduledAt.getTime() < Date.now() + MIN_LEAD_MS) {
+    return { ok: false, error: "must_be_5min_in_future" };
+  }
+  const db = getDb();
+
+  const row = await db.query.scheduledPosts.findFirst({
+    where: eq(scheduledPosts.id, id),
+  });
+  if (!row) return { ok: false, error: "not_found" };
+  if (row.status !== "draft") {
+    return { ok: false, error: `cannot_promote_${row.status}` };
+  }
+
+  // Flip to queued FIRST so retryPost's "non-terminal + no publisherPostId"
+  // guard accepts the row. retryPost owns the submit pipeline (resolver,
+  // createPost, attempt logging, alert wiring) — promote shouldn't fork
+  // that logic. Update scheduled_at at the same time so the publisher
+  // call uses the operator-chosen time, not the placeholder.
+  await db
+    .update(scheduledPosts)
+    .set({ status: "queued", scheduledAt, updatedAt: new Date() })
+    .where(eq(scheduledPosts.id, id));
+
+  return retryPost(id);
+}
+
+/**
  * Marks a row cancelled, deleting from the publisher's side first if the
  * row has already been submitted there. Idempotent: cancelling an already-
  * cancelled row is a no-op.
