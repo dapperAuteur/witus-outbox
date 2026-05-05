@@ -52,6 +52,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const url = req.nextUrl;
   const statusParam = url.searchParams.get("status");
   const platformParam = url.searchParams.get("platform");
+  const sourceParam = url.searchParams.get("source");
 
   let statuses: readonly RowStatus[] = ["queued", "error"];
   if (statusParam === "all") {
@@ -83,9 +84,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     platformFilter = platformParam;
   }
 
+  const sourceFilter = sourceParam?.trim().slice(0, 100) || null;
+
   const conditions: SQL[] = [inArray(scheduledPosts.status, statuses)];
   if (platformFilter) {
     conditions.push(eq(scheduledPosts.platform, platformFilter));
+  }
+  if (sourceFilter) {
+    conditions.push(eq(scheduledPosts.source, sourceFilter));
   }
 
   let rows: Array<{
@@ -134,13 +140,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const filename = buildFilename({
     statuses,
     platform: platformFilter,
+    source: sourceFilter,
   });
 
   console.log(
-    "[admin/export-radaar-csv] rows=%d statuses=%s platform=%s filename=%s",
+    "[admin/export-radaar-csv] rows=%d statuses=%s platform=%s source=%s filename=%s",
     rows.length,
     statuses.join(","),
     platformFilter ?? "all",
+    sourceFilter ?? "all",
     filename
   );
 
@@ -157,9 +165,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 function buildFilename(args: {
   statuses: readonly RowStatus[];
   platform: string | null;
+  source: string | null;
 }): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 16);
   const parts = ["radaar"];
+  if (args.source) parts.push(args.source.replace(/[^a-z0-9-]+/gi, "-").slice(0, 30));
   if (args.platform) parts.push(args.platform);
   parts.push(args.statuses.join("+"));
   parts.push(stamp);

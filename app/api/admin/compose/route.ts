@@ -19,6 +19,9 @@ const ComposeSchema = z.object({
   platforms: z.array(z.enum(PLATFORMS)).min(1).max(8),
   scheduledAt: z.string().datetime({ offset: true }),
   asDraft: z.boolean().default(false),
+  profileIdsByPlatform: z
+    .record(z.enum(PLATFORMS), z.array(z.string().min(1)).max(20))
+    .optional(),
 });
 
 export async function POST(req: Request): Promise<NextResponse> {
@@ -48,6 +51,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       platforms: parsed.data.platforms,
       scheduledAt: new Date(parsed.data.scheduledAt),
       asDraft: parsed.data.asDraft,
+      profileIdsByPlatform: parsed.data.profileIdsByPlatform,
     });
     return NextResponse.json(result, { status: result.ok ? 200 : 422 });
   } catch (err) {
