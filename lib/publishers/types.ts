@@ -1,17 +1,11 @@
 import "server-only";
+import type { Platform } from "@/lib/platforms";
 
-export const PLATFORMS = [
-  "twitter",
-  "instagram",
-  "facebook",
-  "linkedin",
-  "youtube",
-  "bluesky",
-  "tiktok",
-  "pinterest",
-] as const;
-
-export type Platform = (typeof PLATFORMS)[number];
+// Slice 31: PLATFORMS + Platform moved to lib/platforms.ts so client
+// components (e.g. components/Composer.tsx) can consume them without
+// pulling in this server-only module. Re-exported here for back-compat
+// — every existing import from "@/lib/publishers/types" still works.
+export { PLATFORMS, type Platform } from "@/lib/platforms";
 
 export const TERMINAL_STATUSES = ["posted", "error"] as const;
 export type PublisherTerminalStatus = (typeof TERMINAL_STATUSES)[number];
