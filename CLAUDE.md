@@ -78,7 +78,7 @@ Procedure to swap publishers (documented in `plans/01-witus-outbox-bootstrap.md`
 **witus-inbox** is the reference HMAC-receiver implementation. Outbox copies these files **verbatim**:
 
 - `lib/hmac.ts` — `verifySignature({ secret, timestamp, rawBody, signature })`, SHA256 over `${timestamp}.${rawBody}`, 5-minute skew window.
-- `lib/ingest-sources.ts` — env-var registry parsing `INGEST_SOURCES` JSON.
+- `lib/ingest-sources.ts` — env-var registry parsing `INGEST_SOURCES` JSON. **Outbox-only fields piggy-back on the same JSON via sidecar parsers** (`lib/ingest-workspaces.ts` for `workspace_name`, `lib/ingest-publisher-backends.ts` for `publisher_backend`) using Zod `.passthrough()` — `lib/ingest-sources.ts` itself stays byte-for-byte. Inbox's strict schema strips unknown keys silently, so extra fields ride along harmlessly. **Do NOT add outbox-only fields to the verbatim file directly**; add another sidecar.
 - `lib/sms.ts`, `lib/mailgun.ts` — same dev-log + production-guard pattern.
 - `examples/sender.ts` — canonical sender other ecosystem products copy into their `lib/`.
 
