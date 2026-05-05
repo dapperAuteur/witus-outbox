@@ -2,7 +2,7 @@
 
 This is the **action playbook** for wiring a sibling product (witus.online, flashlearn-ai, centenarian-os, fly-witus, contractor-os, future apps) to fire signed publish-requests at WitUS Outbox. Hand this file to Claude Code in the publisher's working directory; it's self-contained.
 
-> **Claude Code: how to fetch this doc.** If you're reading from a sibling repo and don't have the file locally, fetch it from this stable URL: `https://raw.githubusercontent.com/dapperAuteur/witus-outbox/main/examples/INTEGRATE.md`. The companion contract spec is at `https://raw.githubusercontent.com/dapperAuteur/witus-outbox/main/examples/README.md` and the canonical sender at `https://raw.githubusercontent.com/dapperAuteur/witus-outbox/main/examples/sender.ts`.
+> **Claude Code: how to fetch this doc.** If you're reading from a sibling repo and don't have the file locally, fetch it from this stable URL: `https://raw.githubusercontent.com/dapperAuteur/witus-outbox/main/examples/INTEGRATE.md`. The companion contract spec is at `https://raw.githubusercontent.com/dapperAuteur/witus-outbox/main/examples/README.md`, the canonical sender at `https://raw.githubusercontent.com/dapperAuteur/witus-outbox/main/examples/sender.ts`, and the per-product trigger recipes are under `https://raw.githubusercontent.com/dapperAuteur/witus-outbox/main/examples/triggers/<app>.md`.
 
 ---
 
@@ -258,11 +258,26 @@ Add the `share_to_outbox_opt_in` boolean to your `users` table (default false) a
 
 ---
 
+## Per-app trigger recipes (start here for the actual events)
+
+This file is the meta-playbook (gates, sender, smoke). For the concrete WHAT-triggers-and-HOW per product, read the per-app recipe:
+
+| Product | Recipe | Triggers |
+|---|---|---|
+| witus.online | [`triggers/witus-online.md`](./triggers/witus-online.md) | Podcast publishing — covers BOTH BAM's "World's Fastest Centenarian" and AAMSAZ's podcast (two slugs, two workspaces, one trigger function) |
+| flashlearn-ai | [`triggers/flashlearn-ai.md`](./triggers/flashlearn-ai.md) | 5 events: study session, recall milestone, challenge created, challenge completed, public set |
+| centenarian-os | [`triggers/centenarian-os.md`](./triggers/centenarian-os.md) | 22 events across tasks/goals/milestones/cadence/nutrition/fitness/business/content/academy/live |
+| fly-witus | [`triggers/fly-witus.md`](./triggers/fly-witus.md) | Flight-log save → operator-reviewed draft |
+| ANY (cross-cutting) | [`triggers/signups.md`](./triggers/signups.md) | New-user signup (free + paid) + class enrollment (ECS, FDAC, …) |
+
+Pattern: read INTEGRATE.md (this file) for the gate + sender setup once per app, then the per-app recipe for the concrete trigger calls.
+
 ## Reference
 
 - `examples/sender.ts` — the canonical sender. Copy verbatim.
 - `examples/README.md` — the contract spec (what outbox accepts, what the response shapes are).
-- `plans/user-tasks/{09-flywitus, 10-witus-online, 11-flashlearn, 12-centenarian-os, 13-ecosystem-signup}.md` — per-app integration recipes with concrete trigger lists.
+- `examples/triggers/<app>.md` — per-product trigger recipes (above table).
+- `plans/user-tasks/{09–13}.md` (BAM-local, gitignored) — operator provisioning checklists.
 - `plans/future/admin-kill-switch.md` — the env-var pattern this doc uses for gate 1.
 - `plans/future/per-user-opt-in.md` — the gate-3 pattern for after-smoke phase.
 - `plans/future/ecosystem-outbox-scenarios.md` — the catalog of trigger ideas across the ecosystem.
