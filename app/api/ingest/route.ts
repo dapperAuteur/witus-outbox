@@ -9,7 +9,7 @@ import { verifySignature } from "@/lib/hmac";
 import { getSourceSecret } from "@/lib/ingest-sources";
 import { getSourceWorkspaceName } from "@/lib/ingest-workspaces";
 import { resolveProfileIds } from "@/lib/profile-resolver";
-import { getPublisher } from "@/lib/publishers";
+import { getPublisherForSource } from "@/lib/publishers";
 import { PLATFORMS } from "@/lib/publishers/types";
 import { getDefaultWorkspaceId, getWorkspaceIdByName } from "@/lib/workspaces";
 
@@ -94,7 +94,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const db = getDb();
-  const publisher = getPublisher();
+  // Per-source backend routing (slice 28): each INGEST_SOURCES entry can
+  // pin its slug to a specific publisher via optional `publisher_backend`,
+  // falling back to PUBLISHER_BACKEND env. Reconciliation uses the row's
+  // stored backend, so a swap doesn't strand in-flight posts.
+  const publisher = getPublisherForSource(source);
   const scheduledAt = new Date(parsed.data.scheduled_at);
 
   // Per-source workspace routing: each INGEST_SOURCES entry's optional
@@ -248,7 +252,10 @@ interface SubmitArgs {
 
 async function submitToPublisher(args: SubmitArgs): Promise<void> {
   const db = getDb();
-  const publisher = getPublisher();
+  // Per-source backend (slice 28). Re-resolved here rather than threaded
+  // through args because env + INGEST_SOURCES are stable for the lifetime
+  // of the after() callback — same answer the ingest path got moments ago.
+  const publisher = getPublisherForSource(args.source);
 
   const resolved = await resolveProfileIds({
     publisherBackend: publisher.backend,
