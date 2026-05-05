@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
-import { Download, Search, Settings } from "lucide-react";
+import { Download, PenSquare, Search, Settings } from "lucide-react";
 import { and, desc, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { scheduledPosts } from "@/db/schema";
@@ -108,6 +108,13 @@ export default async function OutboxList({
           <h1 className="text-2xl font-semibold tracking-tight">Triage</h1>
         </div>
         <div className="flex items-center gap-1">
+          <Link
+            href="/outbox/compose"
+            className="inline-flex items-center gap-1 rounded-md min-h-11 min-w-11 px-3 text-sm font-medium text-violet-700 hover:bg-violet-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:text-violet-300 dark:hover:bg-violet-900/30"
+          >
+            <PenSquare className="size-4" aria-hidden="true" />
+            <span>Compose</span>
+          </Link>
           <Link
             href="/outbox/setup"
             className="inline-flex items-center gap-1 rounded-md min-h-11 min-w-11 px-3 text-sm font-medium text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 dark:text-slate-200 dark:hover:bg-slate-800"
