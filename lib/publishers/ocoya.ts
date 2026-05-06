@@ -195,9 +195,21 @@ const adapter: PublisherAdapter = {
     );
 
     if (res.ok) {
-      const body = (await res.json()) as { id?: string | number };
-      const id = body.id != null ? String(body.id) : null;
+      const body = (await res.json()) as Record<string, unknown>;
+      const id = extractCreatePostId(body, res.headers.get("location"));
       if (!id) {
+        // Log the response shape (keys only — body values may echo caption /
+        // media which is PII per charter §3) so we can adjust the extractor
+        // without round-tripping through BAM. The 201 means Ocoya created
+        // the post; we just couldn't find the id where we looked. This is
+        // correctness-critical because without the id the reconciler can't
+        // poll for status, and a retry would create a duplicate.
+        console.error(
+          "[ocoya] createPost succeeded (status=%d) but id not extractable; bodyKeys=%s locationHeader=%s",
+          res.status,
+          JSON.stringify(Object.keys(body)),
+          res.headers.get("location") ?? "(none)"
+        );
         return { ok: false, status: res.status, detail: "ocoya-no-id-in-response" };
       }
       return { ok: true, externalId: id };
@@ -457,6 +469,70 @@ function mapOcoyaPost(body: {
     errorDetail: body.error ?? null,
     postedAt: body.postedAt ? new Date(body.postedAt) : null,
   };
+}
+
+/**
+ * Extract a post id from Ocoya's createPost response. Probes multiple paths
+ * because Ocoya's documented response shape isn't reliably surfacing in
+ * production traffic — slice 37 (BAM 2026-05-06) hit a 201 Created where
+ * `body.id` was undefined. Defensive over-extraction is cheap; missing the
+ * id is correctness-critical (reconciler can't poll without it; retries
+ * would create duplicates).
+ *
+ * Probe order:
+ *   1. body.id                               (original assumption)
+ *   2. body.postId, body.post_id             (camel/snake variants)
+ *   3. body.data?.id, body.data?.postId      (data-wrapped responses)
+ *   4. body.post?.id                         (post-wrapped responses)
+ *   5. Location response header              (RFC 7231 standard for 201)
+ *
+ * Returns the first match coerced to string. Null when nothing matched.
+ *
+ * Exported for unit testing.
+ */
+export function extractCreatePostId(
+  body: Record<string, unknown>,
+  locationHeader: string | null
+): string | null {
+  // Direct top-level fields
+  for (const key of ["id", "postId", "post_id"] as const) {
+    const v = body[key];
+    if (typeof v === "string" && v.length > 0) return v;
+    if (typeof v === "number") return String(v);
+  }
+
+  // Nested under .data
+  const data = body.data;
+  if (data && typeof data === "object") {
+    const d = data as Record<string, unknown>;
+    for (const key of ["id", "postId", "post_id"] as const) {
+      const v = d[key];
+      if (typeof v === "string" && v.length > 0) return v;
+      if (typeof v === "number") return String(v);
+    }
+  }
+
+  // Nested under .post
+  const post = body.post;
+  if (post && typeof post === "object") {
+    const p = post as Record<string, unknown>;
+    for (const key of ["id", "postId", "post_id"] as const) {
+      const v = p[key];
+      if (typeof v === "string" && v.length > 0) return v;
+      if (typeof v === "number") return String(v);
+    }
+  }
+
+  // Location header. Ocoya may set Location: /post/{id} or a full URL.
+  // Strip query/fragment, then take the last non-empty path segment.
+  if (locationHeader && locationHeader.length > 0) {
+    const withoutQuery = locationHeader.split(/[?#]/)[0];
+    const segments = withoutQuery.split("/").filter((s) => s.length > 0);
+    const last = segments[segments.length - 1];
+    if (last && last.length > 0) return last;
+  }
+
+  return null;
 }
 
 export const ocoyaAdapter = adapter;
