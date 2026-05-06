@@ -229,6 +229,8 @@ const adapter: PublisherAdapter = {
     if (!res.ok) return null;
     const body = (await res.json()) as {
       id?: string | number;
+      postGroupId?: string | number;
+      post_group_id?: string | number;
       status?: string;
       error?: string;
       postedAt?: string;
@@ -252,6 +254,8 @@ const adapter: PublisherAdapter = {
     const body = (await res.json()) as {
       data?: Array<{
         id?: string | number;
+        postGroupId?: string | number;
+        post_group_id?: string | number;
         status?: string;
         error?: string;
         postedAt?: string;
@@ -433,13 +437,20 @@ function normalizeOcoyaNetwork(raw: string | null | undefined): string {
   }
 }
 
-function mapOcoyaPost(body: {
+export function mapOcoyaPost(body: {
   id?: string | number;
+  postGroupId?: string | number;
+  post_group_id?: string | number;
   status?: string;
   error?: string;
   postedAt?: string;
 }): PublisherPostStatus | null {
-  if (body.id == null) return null;
+  // Slice 39 (BAM 2026-05-06): Ocoya's createPost response uses
+  // `postGroupId`, NOT `id`. The getPost / getPostsByStatus responses
+  // likely follow the same convention. Probe both so reconciler-side
+  // polling works on rows that submit via the postGroupId path.
+  const rawId = body.postGroupId ?? body.post_group_id ?? body.id;
+  if (rawId == null) return null;
   const ocoyaStatus = (body.status ?? "").toUpperCase();
   let status: PublisherPostStatus["status"];
   switch (ocoyaStatus) {
@@ -464,7 +475,7 @@ function mapOcoyaPost(body: {
       status = "scheduled";
   }
   return {
-    externalId: String(body.id),
+    externalId: String(rawId),
     status,
     errorDetail: body.error ?? null,
     postedAt: body.postedAt ? new Date(body.postedAt) : null,
