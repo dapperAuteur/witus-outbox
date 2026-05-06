@@ -7,7 +7,6 @@ import { getDb } from "@/db";
 import { scheduledPosts } from "@/db/schema";
 import { getAuthOptions } from "@/lib/auth";
 import { parseTriageFilters } from "@/lib/triage-query";
-import { AutoRefresh } from "@/components/AutoRefresh";
 import { SignOutButton } from "@/components/SignOutButton";
 import { TriageList, type TriageRow } from "@/components/TriageList";
 import type { ScheduledPostStatus } from "@/components/StatusBadge";
@@ -101,7 +100,6 @@ export default async function OutboxList({
       id="main"
       className="mx-auto w-full max-w-3xl px-4 py-6 sm:py-10"
     >
-      <AutoRefresh />
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-wide text-violet-600 dark:text-violet-400">
