@@ -238,6 +238,25 @@ Add the `share_to_outbox_opt_in` boolean to your `users` table (default false) a
 
 ---
 
+## Branch / merge rule (every WitUS-ecosystem repo)
+
+**Claude never merges to `main` and never pushes directly to `main`.** BAM owns merges. This applies in every WitUS-ecosystem repo (witus-outbox, witus.online, flashlearn-ai, centenarian-os, fly-witus, bam-landing-page, work-witus, tour-witus, wanderlearn, …).
+
+When you (Claude Code in a sibling repo) implement the trigger from a recipe in this directory, the workflow is:
+
+1. **Branch off `main`.** One branch per integration: `feat/outbox-integration` (or a more-specific name if you prefer).
+2. **Commit per logical unit on that single branch.** For a typical integration, that's 3 commits:
+   - `feat(outbox-sender): add lib/sender-outbox.ts` (only if it wasn't already there)
+   - `feat(outbox-trigger-helper): add lib/outbox-trigger.ts` (per INTEGRATE.md Step 2)
+   - `feat(outbox-<trigger-name>): wire <trigger>` (per the per-app recipe)
+3. **Local-smoke per the recipe's smoke checklist.** Don't ship a branch that hasn't been smoked locally.
+4. **Push the branch to `origin/<branch-name>`.** That's `git push -u origin feat/outbox-integration`.
+5. **Stop.** Report each commit's hash and which call sites you wired. **BAM reviews on GitHub and merges to `main` via the GitHub UI.** Do NOT run `git checkout main && git merge`; do NOT run `git push origin main`; do NOT touch the deployed environment yet.
+
+This is non-negotiable across BAM's ecosystem. If your earlier tooling output suggested "merge to main locally then push main," that was a mistake — disregard it.
+
+---
+
 ## Common errors + fixes
 
 | HTTP status from outbox | Likely cause | Fix |
