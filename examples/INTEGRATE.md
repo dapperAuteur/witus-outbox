@@ -265,10 +265,15 @@ This file is the meta-playbook (gates, sender, smoke). For the concrete WHAT-tri
 | Product | Recipe | Triggers |
 |---|---|---|
 | witus.online | [`triggers/witus-online.md`](./triggers/witus-online.md) | Podcast publishing — covers BOTH BAM's "World's Fastest Centenarian" and AAMSAZ's podcast (two slugs, two workspaces, one trigger function) |
+| bam-landing-page | [`triggers/bam-landing-page.md`](./triggers/bam-landing-page.md) | Blog post published |
 | flashlearn-ai | [`triggers/flashlearn-ai.md`](./triggers/flashlearn-ai.md) | 5 events: study session, recall milestone, challenge created, challenge completed, public set |
 | centenarian-os | [`triggers/centenarian-os.md`](./triggers/centenarian-os.md) | 22 events across tasks/goals/milestones/cadence/nutrition/fitness/business/content/academy/live |
+| wanderlearn | [`triggers/wanderlearn.md`](./triggers/wanderlearn.md) | New destination · class module completed · new tour created |
+| tour-witus | [`triggers/tour-witus.md`](./triggers/tour-witus.md) | Signups (via signups.md) · show date added · time-sensitive tour event (queued, not draft) |
+| work-witus | [`triggers/work-witus.md`](./triggers/work-witus.md) | New job posted · invoice created/closed (event-only captions) |
 | fly-witus | [`triggers/fly-witus.md`](./triggers/fly-witus.md) | Flight-log save → operator-reviewed draft |
-| ANY (cross-cutting) | [`triggers/signups.md`](./triggers/signups.md) | New-user signup (free + paid) + class enrollment (ECS, FDAC, …) |
+| ANY (cross-cutting) | [`triggers/signups.md`](./triggers/signups.md) | Signups (free + paid) · class enrollment (ECS, FDAC, …) · ebook download milestones (betterbud-ecs, fdac, future lead-magnets) |
+| betterbud-ecs / fdac | [`triggers/signups.md`](./triggers/signups.md) | Use the cross-cutting recipe — class enrollment + ebook download patterns are already covered |
 
 Pattern: read INTEGRATE.md (this file) for the gate + sender setup once per app, then the per-app recipe for the concrete trigger calls.
 

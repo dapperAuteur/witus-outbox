@@ -1,20 +1,21 @@
-# Trigger recipe — cross-cutting: signups (free + paid + class enrollment)
+# Trigger recipe — cross-cutting: signups + class enrollment + ebook downloads
 
 > Pair this file with [INTEGRATE.md](../INTEGRATE.md) for gate logic, sender setup, and smoke checklist.
 >
-> **Cross-cutting — applies to multiple publisher products.** Drop this trigger into every product that has a signup flow OR a class enrollment flow.
+> **Cross-cutting — applies to multiple publisher products.** Drop these triggers into every product that has signups, class enrollments, OR ebook downloads.
 
 ---
 
 ## What this triggers on
 
-Three sub-patterns:
+Four sub-patterns:
 
 | Pattern | Trigger | `external_ref` shape | Default platforms |
 |---|---|---|---|
 | 6a | Free user signup | `{slug}-signup-free-{userIdHash}` | twitter, bluesky |
 | 6b | Paid user signup (lifetime / annual) | `{slug}-signup-paid-{userIdHash}-{tier}` | twitter, bluesky, linkedin |
 | 6c | Class enrollment (ECS, FDAC, future classes) | `{slug}-class-{classCode}-enrollment-{seatsTaken}` | twitter, bluesky, linkedin |
+| 6d | Ebook download (lead-magnet milestone) | `{slug}-ebook-{ebookSlug}-{downloadCount}` | twitter, bluesky, linkedin |
 
 Slugs are per-product (whichever product owns the user/class data). Each product registers its own slug in outbox's `INGEST_SOURCES`.
 
@@ -22,13 +23,19 @@ Slugs are per-product (whichever product owns the user/class data). Each product
 
 ## Per-product applicability
 
-| Product | 6a / 6b applicable? | 6c applicable? |
-|---|---|---|
-| witus.online | yes (members can sign up free or paid) | yes (BAM teaches ECS, FDAC, …) |
-| flashlearn-ai | yes | maybe (if classes ship) |
-| centenarian-os | yes | yes |
-| contractor-os | yes (B2B paid signups) | maybe |
-| fly-witus | no (single-user) | no |
+| Product | 6a / 6b applicable? | 6c applicable? | 6d applicable? |
+|---|---|---|---|
+| witus.online | yes (members can sign up free or paid) | yes (BAM teaches ECS, FDAC, …) | yes (lead-magnets) |
+| flashlearn-ai | yes | maybe (if classes ship) | yes (study guides as PDFs) |
+| centenarian-os | yes | yes | yes |
+| **betterbud-ecs** | yes (ECS class signups) | yes (ECS itself) | **yes** (ebook lead-magnets) |
+| **fdac** | yes (FDAC class signups) | yes (FDAC itself) | **yes** (ebook lead-magnets) |
+| contractor-os | yes (B2B paid signups) | maybe | yes |
+| fly-witus | no (single-user) | no | no |
+| tour-witus | yes (audience signups) | n/a (no classes) | maybe |
+| wanderlearn | yes (learner signups) | covered separately in [`wanderlearn.md`](./wanderlearn.md) | yes |
+| work-witus | yes (B2B signups) | n/a | yes |
+| bam-landing-page | n/a (portfolio site, not a product) | n/a | maybe (lead magnets) |
 
 For products where 6a/6b applies: same trigger function shape, only the slug + product-specific naming changes.
 
@@ -155,6 +162,51 @@ const crossedMilestone = milestones.find((m) => pct >= m && previousPct < m);
 if (!crossedMilestone) return;
 // ... fire trigger
 ```
+
+### Step 2.5 — write the ebook-download trigger (where applicable: 6d)
+
+Use case: BAM's products (especially `betterbud-ecs` and `fdac`) offer free ebook PDFs in exchange for an email address. Each download = a new lead. **Don't fire per-download** — that's noise. Fire on **milestone counts** instead.
+
+```ts
+export async function fireEbookDownloadTrigger(args: {
+  ebookSlug: string;             // e.g. "ecs-getting-started", "fdac-week-1"
+  ebookTitle: string;
+  downloadCount: number;         // current count AFTER this download
+}) {
+  if (process.env.OUTBOX_TRIGGER_ENABLED !== "true") return;
+
+  // Milestone-only firing: 100, 500, 1000, 5000, 10000, then every 5000.
+  const milestones = [100, 500, 1000, 5000, 10000];
+  const isMilestone =
+    milestones.includes(args.downloadCount) ||
+    (args.downloadCount > 10000 && args.downloadCount % 5000 === 0);
+  if (!isMilestone) return;
+
+  // PII guard: NEVER include the downloader's email/name. Caption is about
+  // cumulative reach, not the individual.
+  const caption = `${args.downloadCount.toLocaleString()} people have grabbed the "${args.ebookTitle}" ebook. Free if you want it: <ebook-url>`;
+
+  after(async () => {
+    for (const platform of ["twitter", "bluesky", "linkedin"] as const) {
+      await sendToOutbox({
+        outboxUrl: process.env.OUTBOX_INGEST_URL!,
+        sourceSlug: process.env.OUTBOX_SOURCE_SLUG!,
+        hmacSecret: process.env.OUTBOX_INGEST_SECRET!,
+        submission: {
+          external_ref: `${process.env.OUTBOX_SOURCE_SLUG}-ebook-${args.ebookSlug}-${args.downloadCount}-${platform}`,
+          platform,
+          caption,
+          media_urls: [],                      // ebook cover image optional, add if you have one
+          scheduled_at: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+          as_draft: true,
+        },
+      });
+    }
+  });
+}
+```
+
+If milestone-only is too quiet (a brand-new ebook may take months to hit 100), add a `first-day-of-month` aggregation: fire one summary draft per month with the past month's download count, regardless of milestone. Layer it ON TOP OF the milestone firing — they're complementary.
 
 ### Step 3 — call sites
 
