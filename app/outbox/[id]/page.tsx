@@ -6,7 +6,6 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { publishAttempts, scheduledPosts, socialProfiles } from "@/db/schema";
 import { Badge } from "@/components/ui/badge";
-import { AutoRefresh } from "@/components/AutoRefresh";
 import { CopyPostButton } from "@/components/CopyPostButton";
 import { DraftScheduler } from "@/components/DraftScheduler";
 import { EditPostForm } from "@/components/EditPostForm";
@@ -103,7 +102,6 @@ export default async function OutboxDetail({
       id="main"
       className="mx-auto w-full max-w-3xl px-4 py-6 sm:py-10 space-y-6"
     >
-      <AutoRefresh />
       <header className="flex flex-wrap items-center justify-between gap-3">
         <Link
           href="/outbox"
