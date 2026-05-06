@@ -215,3 +215,94 @@ describe("extractCreatePostId", () => {
     ).toBe("fallback-id");
   });
 });
+
+describe("mapOcoyaPost", () => {
+  // Slice 39 — Ocoya's getPost / getPostsByStatus responses likely use the
+  // same `postGroupId` key createPost uses. mapOcoyaPost must accept either
+  // shape so the reconciler can poll rows submitted via postGroupId.
+
+  it("returns null when no id is present in any form", async () => {
+    const { mapOcoyaPost } = await import("./ocoya");
+    expect(mapOcoyaPost({ status: "POSTED" })).toBeNull();
+  });
+
+  it("uses body.postGroupId when present (slice 38/39 — Ocoya's actual key)", async () => {
+    const { mapOcoyaPost } = await import("./ocoya");
+    const result = mapOcoyaPost({
+      postGroupId: "group-123",
+      status: "POSTED",
+    });
+    expect(result).not.toBeNull();
+    expect(result?.externalId).toBe("group-123");
+    expect(result?.status).toBe("posted");
+  });
+
+  it("uses body.post_group_id when present (snake_case variant)", async () => {
+    const { mapOcoyaPost } = await import("./ocoya");
+    expect(
+      mapOcoyaPost({ post_group_id: "snk-456", status: "SCHEDULED" })?.externalId
+    ).toBe("snk-456");
+  });
+
+  it("falls back to body.id when postGroupId is absent", async () => {
+    const { mapOcoyaPost } = await import("./ocoya");
+    expect(
+      mapOcoyaPost({ id: "legacy-id", status: "POSTED" })?.externalId
+    ).toBe("legacy-id");
+  });
+
+  it("prefers postGroupId over id when both present", async () => {
+    const { mapOcoyaPost } = await import("./ocoya");
+    expect(
+      mapOcoyaPost({
+        id: "ignore",
+        postGroupId: "win",
+        status: "POSTED",
+      })?.externalId
+    ).toBe("win");
+  });
+
+  it("coerces numeric postGroupId to string", async () => {
+    const { mapOcoyaPost } = await import("./ocoya");
+    expect(
+      mapOcoyaPost({ postGroupId: 9999, status: "POSTED" })?.externalId
+    ).toBe("9999");
+  });
+
+  it("maps Ocoya status enums correctly", async () => {
+    const { mapOcoyaPost } = await import("./ocoya");
+    const cases: Array<[string, string]> = [
+      ["POSTED", "posted"],
+      ["ERROR", "error"],
+      ["SCHEDULED", "scheduled"],
+      ["DRAFT", "draft"],
+      ["PENDING_APPROVAL", "pending_approval"],
+      ["PENDING_USER_APPROVAL", "pending_approval"],
+      ["PENDING_PROFILE_APPROVAL", "pending_approval"],
+    ];
+    for (const [ocoya, canonical] of cases) {
+      expect(
+        mapOcoyaPost({ postGroupId: "x", status: ocoya })?.status
+      ).toBe(canonical);
+    }
+  });
+
+  it("defaults unmapped status to 'scheduled' (safe fallback)", async () => {
+    const { mapOcoyaPost } = await import("./ocoya");
+    expect(
+      mapOcoyaPost({ postGroupId: "x", status: "WHO_KNOWS" })?.status
+    ).toBe("scheduled");
+  });
+
+  it("preserves errorDetail and postedAt when present", async () => {
+    const { mapOcoyaPost } = await import("./ocoya");
+    const result = mapOcoyaPost({
+      postGroupId: "x",
+      status: "ERROR",
+      error: "rate_limited",
+      postedAt: "2026-05-06T19:00:00Z",
+    });
+    expect(result?.errorDetail).toBe("rate_limited");
+    expect(result?.postedAt).toEqual(new Date("2026-05-06T19:00:00Z"));
+  });
+});
