@@ -91,3 +91,106 @@ describe("ocoyaAdapter — dev-log path", () => {
     expect(errSpy).toHaveBeenCalled();
   });
 });
+
+describe("extractCreatePostId", () => {
+  // Slice 37 — BAM 2026-05-06: production hit "ocoya-no-id-in-response" on
+  // a 201 Created. Probe order must cover the common shapes a vendor uses
+  // for creation responses.
+
+  it("extracts top-level body.id (original assumption)", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(extractCreatePostId({ id: "abc123" }, null)).toBe("abc123");
+  });
+
+  it("coerces numeric body.id to string", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(extractCreatePostId({ id: 42 }, null)).toBe("42");
+  });
+
+  it("extracts top-level body.postId (camelCase variant)", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(extractCreatePostId({ postId: "xyz" }, null)).toBe("xyz");
+  });
+
+  it("extracts top-level body.post_id (snake_case variant)", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(extractCreatePostId({ post_id: "snk" }, null)).toBe("snk");
+  });
+
+  it("extracts body.data.id (data-wrapped response)", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(
+      extractCreatePostId({ data: { id: "wrapped-1" } }, null)
+    ).toBe("wrapped-1");
+  });
+
+  it("extracts body.data.postId (data + camelCase)", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(
+      extractCreatePostId({ data: { postId: "wrapped-2" } }, null)
+    ).toBe("wrapped-2");
+  });
+
+  it("extracts body.post.id (post-wrapped response)", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(
+      extractCreatePostId({ post: { id: "post-wrapped" } }, null)
+    ).toBe("post-wrapped");
+  });
+
+  it("extracts the last path segment from a Location header", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(
+      extractCreatePostId({}, "/post/from-header-id")
+    ).toBe("from-header-id");
+  });
+
+  it("extracts from a full-URL Location header", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(
+      extractCreatePostId({}, "https://app.ocoya.com/api/_public/v1/post/abc")
+    ).toBe("abc");
+  });
+
+  it("strips query string from Location header before extracting", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(
+      extractCreatePostId({}, "/post/with-query?foo=bar")
+    ).toBe("with-query");
+  });
+
+  it("prefers body.id over body.data.id when both are present", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(
+      extractCreatePostId(
+        { id: "top", data: { id: "nested" } },
+        null
+      )
+    ).toBe("top");
+  });
+
+  it("returns null when no id and no Location header", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(extractCreatePostId({}, null)).toBeNull();
+    expect(extractCreatePostId({ unrelated: "thing" }, null)).toBeNull();
+    expect(extractCreatePostId({ data: {} }, null)).toBeNull();
+  });
+
+  it("returns null for empty / non-string / non-number id values", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(extractCreatePostId({ id: "" }, null)).toBeNull();
+    expect(extractCreatePostId({ id: null }, null)).toBeNull();
+    expect(extractCreatePostId({ id: undefined }, null)).toBeNull();
+    expect(extractCreatePostId({ id: {} }, null)).toBeNull();
+  });
+
+  it("falls through to Location header when body has no usable id", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(
+      extractCreatePostId(
+        { unrelated: "thing" },
+        "/post/fallback-id"
+      )
+    ).toBe("fallback-id");
+  });
+});
