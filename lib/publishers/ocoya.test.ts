@@ -97,6 +97,27 @@ describe("extractCreatePostId", () => {
   // a 201 Created. Probe order must cover the common shapes a vendor uses
   // for creation responses.
 
+  it("extracts top-level body.postGroupId (slice 38 — Ocoya's actual shape)", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(
+      extractCreatePostId({ postGroupId: "group-abc" }, null)
+    ).toBe("group-abc");
+  });
+
+  it("extracts top-level body.post_group_id (snake_case variant)", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(
+      extractCreatePostId({ post_group_id: "group-snk" }, null)
+    ).toBe("group-snk");
+  });
+
+  it("prefers body.postGroupId over body.id when both are present", async () => {
+    const { extractCreatePostId } = await import("./ocoya");
+    expect(
+      extractCreatePostId({ id: "fallback-id", postGroupId: "group-wins" }, null)
+    ).toBe("group-wins");
+  });
+
   it("extracts top-level body.id (original assumption)", async () => {
     const { extractCreatePostId } = await import("./ocoya");
     expect(extractCreatePostId({ id: "abc123" }, null)).toBe("abc123");

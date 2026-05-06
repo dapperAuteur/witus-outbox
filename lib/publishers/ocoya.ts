@@ -479,48 +479,55 @@ function mapOcoyaPost(body: {
  * id is correctness-critical (reconciler can't poll without it; retries
  * would create duplicates).
  *
- * Probe order:
- *   1. body.id                               (original assumption)
- *   2. body.postId, body.post_id             (camel/snake variants)
- *   3. body.data?.id, body.data?.postId      (data-wrapped responses)
- *   4. body.post?.id                         (post-wrapped responses)
- *   5. Location response header              (RFC 7231 standard for 201)
+ * Slice 38 (BAM 2026-05-06): production diagnostic showed Ocoya returns
+ * `postGroupId` — the createPost endpoint creates a "post group" that fans
+ * to multiple social profiles, and the group id is the canonical handle.
+ * Added postGroupId / post_group_id to the top-of-probe-order list since
+ * that's what Ocoya actually returns.
+ *
+ * Probe order (first match wins):
+ *   1. body.postGroupId / post_group_id      (Ocoya's actual shape — slice 38)
+ *   2. body.id                               (original assumption; other vendors)
+ *   3. body.postId / post_id                 (camel/snake variants)
+ *   4. body.data?.{postGroupId, id, postId, post_id}     (data-wrapped responses)
+ *   5. body.post?.{postGroupId, id, postId, post_id}     (post-wrapped responses)
+ *   6. Location response header              (RFC 7231 standard for 201)
  *
  * Returns the first match coerced to string. Null when nothing matched.
  *
  * Exported for unit testing.
  */
+const ID_KEYS = ["postGroupId", "post_group_id", "id", "postId", "post_id"] as const;
+
+function pickIdFromObject(obj: Record<string, unknown>): string | null {
+  for (const key of ID_KEYS) {
+    const v = obj[key];
+    if (typeof v === "string" && v.length > 0) return v;
+    if (typeof v === "number") return String(v);
+  }
+  return null;
+}
+
 export function extractCreatePostId(
   body: Record<string, unknown>,
   locationHeader: string | null
 ): string | null {
-  // Direct top-level fields
-  for (const key of ["id", "postId", "post_id"] as const) {
-    const v = body[key];
-    if (typeof v === "string" && v.length > 0) return v;
-    if (typeof v === "number") return String(v);
-  }
+  // Direct top-level
+  const direct = pickIdFromObject(body);
+  if (direct) return direct;
 
   // Nested under .data
   const data = body.data;
   if (data && typeof data === "object") {
-    const d = data as Record<string, unknown>;
-    for (const key of ["id", "postId", "post_id"] as const) {
-      const v = d[key];
-      if (typeof v === "string" && v.length > 0) return v;
-      if (typeof v === "number") return String(v);
-    }
+    const id = pickIdFromObject(data as Record<string, unknown>);
+    if (id) return id;
   }
 
   // Nested under .post
   const post = body.post;
   if (post && typeof post === "object") {
-    const p = post as Record<string, unknown>;
-    for (const key of ["id", "postId", "post_id"] as const) {
-      const v = p[key];
-      if (typeof v === "string" && v.length > 0) return v;
-      if (typeof v === "number") return String(v);
-    }
+    const id = pickIdFromObject(post as Record<string, unknown>);
+    if (id) return id;
   }
 
   // Location header. Ocoya may set Location: /post/{id} or a full URL.
