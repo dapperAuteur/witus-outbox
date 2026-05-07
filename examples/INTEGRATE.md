@@ -285,7 +285,7 @@ This file is the meta-playbook (gates, sender, smoke). For the concrete WHAT-tri
 |---|---|---|
 | witus.online | [`triggers/witus-online.md`](./triggers/witus-online.md) | Podcast publishing — covers BOTH BAM's "World's Fastest Centenarian" and AAMSAZ's podcast (two slugs, two workspaces, one trigger function) |
 | bam-landing-page | [`triggers/bam-landing-page.md`](./triggers/bam-landing-page.md) | Blog post published |
-| flashlearn-ai | [`triggers/flashlearn-ai.md`](./triggers/flashlearn-ai.md) | 5 events: study session, recall milestone, challenge created, challenge completed, public set |
+| flashlearn-ai | [`triggers/flashlearn-ai.md`](./triggers/flashlearn-ai.md) | 9 events: study session, recall milestone, recall daily digest, challenge created, challenge completed (conditional win/attempt caption), public set, signup (delegated), study group, classroom group |
 | centenarian-os | [`triggers/centenarian-os.md`](./triggers/centenarian-os.md) | 22 events across tasks/goals/milestones/cadence/nutrition/fitness/business/content/academy/live |
 | wanderlearn | [`triggers/wanderlearn.md`](./triggers/wanderlearn.md) | New destination · class module completed · new tour created |
 | tour-witus | [`triggers/tour-witus.md`](./triggers/tour-witus.md) | Signups (via signups.md) · show date added · time-sensitive tour event (queued, not draft) |
