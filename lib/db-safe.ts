@@ -89,3 +89,55 @@ function pickCode(value: unknown): string | null {
   if (!/^[0-9A-Z]{5}$/.test(code)) return null;
   return code;
 }
+
+/**
+ * Postgres SQLSTATE classes that mean "the connection blipped, try again":
+ *   - `08xxx` connection_exception family (08000/08003/08006/08001/08004/…)
+ *   - `57P01` admin_shutdown (Neon recycled the compute / auto-suspend wake)
+ * These are transient — a cold-start Neon connection blip on the first query
+ * of a tick is the textbook case. See lib/reconciler.ts step 1.
+ */
+function isRetryableSqlstate(code: string | null): boolean {
+  if (!code) return false;
+  if (code.startsWith("08")) return true;
+  return code === "57P01";
+}
+
+/** Node/undici transient network error codes (not SQLSTATE-shaped). */
+const RETRYABLE_NET_CODES = new Set([
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ECONNREFUSED",
+  "EPIPE",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET",
+]);
+
+function pickRawCode(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const code = (value as { code?: unknown }).code;
+  return typeof code === "string" ? code : null;
+}
+
+/**
+ * True when a thrown value looks like a transient connection blip worth one
+ * retry: a retryable Postgres SQLSTATE, a Node network error code (on the
+ * error or its `cause`), or undici's `TypeError: fetch failed`. Used by the
+ * tick route to self-heal cold-start Neon hiccups before they reach a 500.
+ *
+ * Like describeError, never inspects content-bearing message text beyond the
+ * exact undici marker `"fetch failed"`.
+ */
+export function isRetryable(err: unknown): boolean {
+  if (isRetryableSqlstate(describeError(err).code)) return true;
+  if (!(err instanceof Error)) return false;
+  const cause = (err as { cause?: unknown }).cause;
+  const rawCode = pickRawCode(err) ?? pickRawCode(cause);
+  if (rawCode && RETRYABLE_NET_CODES.has(rawCode)) return true;
+  // undici surfaces network failures as `TypeError: fetch failed`, with the
+  // real cause nested. The class name + exact marker is content-free.
+  if (err.name === "TypeError" && err.message === "fetch failed") return true;
+  return false;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { describeError, safeDbWrite } from "./db-safe";
+import { describeError, isRetryable, safeDbWrite } from "./db-safe";
 
 describe("safeDbWrite", () => {
   it("returns ok=true with the value on success", async () => {
@@ -136,5 +136,54 @@ describe("describeError", () => {
       code: 42,
     });
     expect(describeError(e)).toEqual({ name: "OtherError", code: null });
+  });
+});
+
+describe("isRetryable", () => {
+  it("retries Postgres connection-exception (08xxx) SQLSTATEs", () => {
+    for (const code of ["08000", "08003", "08006", "08001", "08004"]) {
+      const e = Object.assign(new Error("conn"), { name: "NeonDbError", code });
+      expect(isRetryable(e)).toBe(true);
+    }
+  });
+
+  it("retries 57P01 admin_shutdown (Neon compute recycle)", () => {
+    const e = Object.assign(new Error("shutdown"), {
+      name: "NeonDbError",
+      code: "57P01",
+    });
+    expect(isRetryable(e)).toBe(true);
+  });
+
+  it("does NOT retry deterministic SQLSTATEs (undefined table, unique violation)", () => {
+    for (const code of ["42P01", "42703", "23505", "23503"]) {
+      const e = Object.assign(new Error("schema"), { name: "NeonDbError", code });
+      expect(isRetryable(e)).toBe(false);
+    }
+  });
+
+  it("retries Node network error codes on the error or its cause", () => {
+    const direct = Object.assign(new Error("reset"), {
+      name: "Error",
+      code: "ECONNRESET",
+    });
+    expect(isRetryable(direct)).toBe(true);
+
+    const wrapped = Object.assign(new Error("fetch failed"), {
+      name: "TypeError",
+      cause: Object.assign(new Error("inner"), { code: "ETIMEDOUT" }),
+    });
+    expect(isRetryable(wrapped)).toBe(true);
+  });
+
+  it("retries undici's bare 'TypeError: fetch failed'", () => {
+    const e = new TypeError("fetch failed");
+    expect(isRetryable(e)).toBe(true);
+  });
+
+  it("does not retry plain errors or non-Error throws", () => {
+    expect(isRetryable(new Error("boom"))).toBe(false);
+    expect(isRetryable("string")).toBe(false);
+    expect(isRetryable(undefined)).toBe(false);
   });
 });
