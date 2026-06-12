@@ -156,7 +156,12 @@ export async function runReconciler(): Promise<ReconcileResult> {
         wsResult.rowsFlipped++;
 
         if (nextStatus === "error" && local.status !== "error") {
-          void sendOutboxAlert({
+          // Awaited, not fire-and-forget: a rejected detached promise here
+          // becomes an unhandled rejection that crashes the whole tick
+          // invocation (Vercel platform 500, unlogged by our catch). The
+          // alert path is rare and the tick has maxDuration=300, so the wait
+          // is cheap. sendOutboxAlert already swallows send failures.
+          await sendOutboxAlert({
             origin: "reconcile",
             scheduledPostId: local.id,
             source: local.source,

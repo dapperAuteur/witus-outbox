@@ -59,7 +59,10 @@ export async function retryPost(id: string): Promise<ActionResult> {
       ok: false,
       detail: "no_social_profile",
     });
-    void sendOutboxAlert({
+    // Awaited, not fire-and-forget — an unhandled rejection from a detached
+    // alert promise crashes the calling invocation (e.g. the reconciler tick
+    // that calls retryPost). sendOutboxAlert swallows send failures itself.
+    await sendOutboxAlert({
       origin: "ingest",
       scheduledPostId: id,
       source: row.source,
@@ -113,7 +116,10 @@ export async function retryPost(id: string): Promise<ActionResult> {
         updatedAt: new Date(),
       })
       .where(eq(scheduledPosts.id, id));
-    void sendOutboxAlert({
+    // Awaited, not fire-and-forget — an unhandled rejection from a detached
+    // alert promise crashes the calling invocation (e.g. the reconciler tick
+    // that calls retryPost). sendOutboxAlert swallows send failures itself.
+    await sendOutboxAlert({
       origin: "ingest",
       scheduledPostId: id,
       source: row.source,
@@ -282,7 +288,10 @@ export async function reconcileNowPost(id: string): Promise<ActionResult> {
     remote.status === "error" &&
     row.status !== "error" /* fresh transition */
   ) {
-    void sendOutboxAlert({
+    // Awaited, not fire-and-forget — an unhandled rejection from a detached
+    // alert promise crashes the calling invocation (e.g. the reconciler tick
+    // that calls retryPost). sendOutboxAlert swallows send failures itself.
+    await sendOutboxAlert({
       origin: "reconcile",
       scheduledPostId: id,
       source: row.source,

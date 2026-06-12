@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
-import { describeError } from "@/lib/db-safe";
+import { getDb } from "@/db";
+import { tickRuns } from "@/db/schema";
+import { describeError, isRetryable, safeDbWrite } from "@/lib/db-safe";
 import { getEnv } from "@/lib/env";
-import { runReconciler } from "@/lib/reconciler";
+import { runReconciler, type ReconcileResult } from "@/lib/reconciler";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,22 +22,52 @@ export const maxDuration = 300;
  * and refreshes social_profile cache when stale. The publisher API key
  * never lives in Apps Script's Script Properties — only this bearer
  * token does.
+ *
+ * Reliability contract (see plans/got-an-error-email-*.md): the ENTIRE body
+ * runs inside one try/catch — including the auth/env read — so a failure can
+ * never escape as an unlogged Vercel platform 500. Transient connection blips
+ * get one retry. Every tick (success or failure) writes a durable `tick_run`
+ * row so the outcome survives Hobby's short log retention.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  const authorized = bearerOk(req);
-  if (!authorized) {
-    console.warn("[admin/tick] unauthorized");
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  }
+  const startedAt = new Date();
+  let attempts = 0;
 
   try {
-    const result = await runReconciler();
+    if (!bearerOk(req)) {
+      console.warn("[admin/tick] unauthorized");
+      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    }
+
+    // Self-heal transient DB blips (Neon cold-start / connection reset) with a
+    // single retry before surfacing a 500.
+    let result: ReconcileResult;
+    for (;;) {
+      attempts++;
+      try {
+        result = await runReconciler();
+        break;
+      } catch (err) {
+        const meta = describeError(err);
+        if (attempts < 2 && isRetryable(err)) {
+          console.warn(
+            "[admin/tick] retryable err=%s code=%s; retrying",
+            meta.name,
+            meta.code ?? "?"
+          );
+          continue;
+        }
+        throw err;
+      }
+    }
+
     console.log(
-      "[admin/tick] backend=%s profiles_refreshed=%s retried_queued=%d workspaces=%d",
+      "[admin/tick] backend=%s profiles_refreshed=%s retried_queued=%d workspaces=%d attempts=%d",
       result.backend,
       result.profilesRefreshed,
       result.retriedQueued,
-      result.workspaces.length
+      result.workspaces.length,
+      attempts
     );
     for (const ws of result.workspaces) {
       if (ws.rowsFlipped > 0 || ws.freshErrorAlerts > 0) {
@@ -49,10 +81,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         );
       }
     }
+
+    await recordTickRun({ startedAt, ok: true, attempts, result });
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
     const meta = describeError(err);
     console.error("[admin/tick] err=%s code=%s", meta.name, meta.code ?? "?");
+    await recordTickRun({ startedAt, ok: false, attempts: attempts || 1, error: meta });
     return NextResponse.json(
       {
         ok: false,
@@ -62,6 +97,38 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 500 }
     );
   }
+}
+
+/**
+ * Durable record of one tick. Wrapped in safeDbWrite so a logging-table
+ * failure can never itself crash the tick (the very bug this guards against).
+ * Metadata only — error name/code come from describeError, never message.
+ */
+async function recordTickRun(args: {
+  startedAt: Date;
+  ok: boolean;
+  attempts: number;
+  result?: ReconcileResult;
+  error?: { name: string; code: string | null };
+}): Promise<void> {
+  const { startedAt, ok, attempts, result, error } = args;
+  await safeDbWrite({ op: "tick_run.insert" }, async () => {
+    const db = getDb();
+    await db.insert(tickRuns).values({
+      startedAt,
+      finishedAt: new Date(),
+      ok,
+      attempts,
+      backend: result?.backend ?? null,
+      errorName: error?.name ?? null,
+      errorCode: error?.code ?? null,
+      workspacesScanned: result?.workspaces.length ?? 0,
+      rowsFlipped:
+        result?.workspaces.reduce((sum, ws) => sum + ws.rowsFlipped, 0) ?? 0,
+      retriedQueued: result?.retriedQueued ?? 0,
+      profilesRefreshed: result?.profilesRefreshed ?? false,
+    });
+  });
 }
 
 function bearerOk(req: NextRequest): boolean {

@@ -74,6 +74,33 @@ export const publishAttempts = pgTable("publish_attempt", {
   externalId: text("external_id"),
 });
 
+/**
+ * One row per reconciler tick (`/api/admin/tick`). Durable record so a tick
+ * failure survives Vercel Hobby's short log retention — the tick route logs
+ * are gone within hours, but this table answers "did the last tick run, and
+ * what broke?" indefinitely. Powers `/api/admin/health`.
+ *
+ * Metadata only — never caption/media. `errorName`/`errorCode` come from
+ * `describeError()` (lib/db-safe.ts), which is content-free by construction.
+ */
+export const tickRuns = pgTable("tick_run", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  startedAt: timestamp("started_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  ok: boolean("ok").notNull(),
+  backend: text("backend"),
+  /** Number of `runReconciler()` attempts in this tick: 1, or 2 when the first failed retryably. */
+  attempts: integer("attempts").notNull().default(1),
+  errorName: text("error_name"),
+  errorCode: text("error_code"),
+  workspacesScanned: integer("workspaces_scanned").notNull().default(0),
+  rowsFlipped: integer("rows_flipped").notNull().default(0),
+  retriedQueued: integer("retried_queued").notNull().default(0),
+  profilesRefreshed: boolean("profiles_refreshed").notNull().default(false),
+});
+
 export const socialProfiles = pgTable(
   "social_profile",
   {
