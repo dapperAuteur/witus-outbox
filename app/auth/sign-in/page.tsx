@@ -93,6 +93,33 @@ export default function SignInPage() {
             {pending ? "Sending link…" : "Email me a sign-in link"}
           </Button>
         </form>
+
+        {process.env.NEXT_PUBLIC_WITUS_SSO ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+              <span className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                or
+              </span>
+              <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              disabled={pending}
+              onClick={() => {
+                const callbackUrl =
+                  new URLSearchParams(window.location.search).get(
+                    "callbackUrl"
+                  ) ?? "/outbox";
+                void signIn("witus", { callbackUrl });
+              }}
+            >
+              Sign in with WitUS
+            </Button>
+          </div>
+        ) : null}
       </div>
     </main>
   );
