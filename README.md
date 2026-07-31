@@ -46,7 +46,7 @@ whether its token is valid: a vendor outage is not an outbox outage and must not
 red, provider error bodies echo bearer tokens, and this endpoint is open to the internet.
 
 Not to be confused with `GET /api/admin/health`, which is bearer-authed and answers a different
-question — "did the Apps Script reconciler tick recently, and what last broke?"
+question: "did the Apps Script reconciler tick recently, and what last broke?"
 
 ## Error monitoring
 

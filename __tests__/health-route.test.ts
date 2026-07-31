@@ -13,7 +13,7 @@ const { GET } = await import("@/app/api/health/route");
 /**
  * The exact shape of a Neon connection failure: the driver's message embeds
  * the connection string, password included. Nothing resembling this may reach
- * the response body — the endpoint is public and unauthenticated.
+ * the response body. The endpoint is public and unauthenticated.
  */
 const LEAKY_ERROR = new Error(
   "connect ECONNREFUSED postgresql://outbox_owner:sup3r-s3cret-pw@ep-fake-123.us-east-2.aws.neon.tech/outbox?sslmode=require"
