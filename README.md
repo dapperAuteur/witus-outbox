@@ -24,6 +24,30 @@ DB columns are publisher-agnostic (`publisher_backend`, `publisher_post_id`, `pu
 - Zod validation, Vitest tests
 - Error monitoring via the `@sentry/nextjs` SDK pointed at **Better Stack**
 
+## Uptime monitoring
+
+**Point uptime monitors at `GET /api/health`, not at `/`.** The homepage can return a cached 200
+while Postgres is down, so a green check there means nothing. `/api/health` is public,
+unauthenticated, never cached (`force-dynamic` + `Cache-Control: no-store`) and runs one real
+`select 1` against Neon on every request:
+
+| Condition | Status | Body |
+| --- | --- | --- |
+| Database answers | `200` | `{"ok":true,"checkedAt":"<ISO 8601>"}` |
+| Database unreachable, erroring, or slower than 4s | `503` | `{"ok":false,"error":"database_unreachable"}` |
+
+The failure body is that fixed token and nothing else. Neon connection errors routinely embed the
+connection string **including the password**, so the raw error never crosses the response boundary;
+only the content-free error class name and SQLSTATE (via `lib/db-safe.ts`) go to the server log.
+
+It checks the database and nothing else. It deliberately does **not** call Ocoya, SocialChamp,
+Mailgun or Mobile Text Alerts, and reports nothing about which publisher backend is configured or
+whether its token is valid: a vendor outage is not an outbox outage and must not turn the monitor
+red, provider error bodies echo bearer tokens, and this endpoint is open to the internet.
+
+Not to be confused with `GET /api/admin/health`, which is bearer-authed and answers a different
+question — "did the Apps Script reconciler tick recently, and what last broke?"
+
 ## Error monitoring
 
 Server, edge and browser errors report through the `@sentry/nextjs` SDK to a Better Stack source. The
