@@ -52,3 +52,7 @@ plans/
 
 AGENTS.md
 .env*.local
+
+# Playwright output
+test-results/
+playwright-report/
