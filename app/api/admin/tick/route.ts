@@ -83,6 +83,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
 
     await recordTickRun({ startedAt, ok: true, attempts, result });
+    await pingHeartbeat();
     return NextResponse.json(result, { status: 200 });
   } catch (err) {
     const meta = describeError(err);
@@ -129,6 +130,25 @@ async function recordTickRun(args: {
       profilesRefreshed: result?.profilesRefreshed ?? false,
     });
   });
+}
+
+/**
+ * Better Stack heartbeat, pinged ONLY at the end of a successful tick. A missed
+ * heartbeat IS the signal — it means Apps Script stopped calling or the tick
+ * started failing — so failure paths deliberately do not ping. Inert until
+ * BETTERSTACK_HEARTBEAT_URL is set (witus plans/user-tasks/73 provisions it).
+ * Awaited (Vercel freezes the function after the response, so a dangling fetch
+ * may never fire) but bounded by a short timeout, and a ping failure can never
+ * fail the tick itself.
+ */
+async function pingHeartbeat(): Promise<void> {
+  const url = process.env.BETTERSTACK_HEARTBEAT_URL;
+  if (!url) return;
+  try {
+    await fetch(url, { signal: AbortSignal.timeout(3000) });
+  } catch {
+    console.warn("[admin/tick] heartbeat ping failed");
+  }
 }
 
 function bearerOk(req: NextRequest): boolean {
