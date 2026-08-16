@@ -1,0 +1,71 @@
+# E2E + a11y gate against real Vercel deployments (witus plan 30 Phase 2, ported from the
+# witus.online repo).
+#
+# Trigger is deployment_status, NOT push/pull_request: Vercel's GitHub integration deploys every
+# push, then reports the deployment result here with the live URL. Running against that URL tests
+# real infra with real env — no secrets or database needed in CI.
+#
+# Two things to know about this trigger:
+# 1. GitHub only runs the workflow file version on the DEFAULT branch, so this gate goes live on
+#    the first merge to main and covers every deployment after that.
+# 2. If the Vercel project has Deployment Protection enabled, preview URLs 401 for the runner.
+#    Fix: Vercel → Project → Deployment Protection → "Protection Bypass for Automation", copy the
+#    secret into the repo's Actions secrets as VERCEL_AUTOMATION_BYPASS_SECRET. Public previews
+#    need nothing.
+name: e2e
+
+on:
+  deployment_status:
+
+jobs:
+  preview-e2e:
+    name: e2e vs preview deployment
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment_status.environment != 'Production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Test the code that was actually deployed, not whatever main points at right now.
+          ref: ${{ github.event.deployment.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run e2e suite against the preview URL
+        run: npx playwright test
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ github.event.deployment_status.environment_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  production-smoke:
+    name: smoke vs production
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment_status.environment == 'Production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run @smoke tests against production
+        run: npx playwright test --grep "@smoke" --project=desktop
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ github.event.deployment_status.environment_url }}
