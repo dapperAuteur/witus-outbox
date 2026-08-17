@@ -48,6 +48,12 @@ red, provider error bodies echo bearer tokens, and this endpoint is open to the 
 Not to be confused with `GET /api/admin/health`, which is bearer-authed and answers a different
 question: "did the Apps Script reconciler tick recently, and what last broke?"
 
+The reconciler itself is watched by a **Better Stack heartbeat**: `/api/admin/tick` pings
+`BETTERSTACK_HEARTBEAT_URL` only at the end of a *successful* tick. A missed heartbeat IS the
+signal — it means Apps Script stopped calling or the tick started failing — so failure paths
+deliberately do not ping. Inert until the env var is set; the ping is awaited with a short timeout
+and can never fail the tick itself.
+
 ## Error monitoring
 
 Server, edge and browser errors report through the `@sentry/nextjs` SDK to a Better Stack source. The
@@ -61,6 +67,40 @@ headers are deleted, captured local variables are dropped, and publisher API key
 secrets, social-platform OAuth tokens, JWTs, connection-string passwords and email addresses are
 redacted out of messages, exception values, breadcrumbs, tags and extras. `lib/sentry-scrub.test.ts`
 asserts the serialized event contains none of them.
+
+## Distributed tracing
+
+Traces go to **Honeycomb** over OTLP via `@vercel/otel` (`otel.config.ts`, registered from
+`instrumentation.ts` **before** the Sentry configs load — whoever registers the global tracer
+provider first wins, and Sentry is told to stand down via `skipOpenTelemetrySetup` in
+`sentry.server.config.ts`). Service name is `witus-outbox`.
+
+- **Inert until the key is set**: `HONEYCOMB_INGEST_API_KEY_SECRET` (fallback `HONEYCOMB_API_KEY`).
+  Same inert-until-provisioned pattern as the Sentry DSN — with neither var set, registration is
+  skipped entirely.
+- **`/api/health` spans are dropped at the sampler** — Better Stack probes it around the clock, and
+  those requests must not spend Honeycomb's free-tier event budget. Everything else is recorded
+  unsampled.
+- `@vercel/otel` honors incoming W3C `traceparent` headers, so a publish request signed by a
+  sending ecosystem app continues here as the same distributed trace.
+
+## E2E + accessibility CI
+
+Playwright specs live in `e2e/`; the gate runs in `.github/workflows/e2e.yml` on
+`deployment_status` — it tests the **real Vercel deployment URL** (preview → full suite,
+production → `@smoke` only), so CI needs no secrets, database, or env. The suite runs desktop plus
+a 360px mobile project, and every covered page must pass an axe check with **zero serious or
+critical WCAG A/AA violations** — the gate is strict on purpose; fix the page, not the gate.
+
+- Local runs: `PLAYWRIGHT_BASE_URL=<url> npx playwright test` (drives installed Chrome via
+  `channel: "chrome"`; Playwright's bundled chromium doesn't support macOS 13).
+- If the Vercel project enables Deployment Protection, set the project's "Protection Bypass for
+  Automation" secret as the `VERCEL_AUTOMATION_BYPASS_SECRET` Actions secret; public previews need
+  nothing.
+- **Synthetic traffic is tagged, not hidden**: every request the suite makes carries
+  `x-witus-origin-test: playwright-synthetic`, which the OTel layer surfaces as the
+  `witus.origin_test` span attribute — Honeycomb queries (and logs/analytics) can include or
+  exclude test traffic. Absent header = attribute absent = real user.
 
 ## Status
 
