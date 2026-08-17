@@ -23,7 +23,13 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "retain-on-failure",
-    ...(bypass ? { extraHTTPHeaders: { "x-vercel-protection-bypass": bypass } } : {}),
+    extraHTTPHeaders: {
+      // Tags every request this suite makes as synthetic, ecosystem-wide convention. The OTel
+      // layer maps it to the `witus.origin_test` span attribute (otel.config.ts), so Honeycomb
+      // queries can include/exclude test traffic; analytics and logs can filter on it too.
+      "x-witus-origin-test": "playwright-synthetic",
+      ...(bypass ? { "x-vercel-protection-bypass": bypass } : {}),
+    },
   },
   projects: [
     {

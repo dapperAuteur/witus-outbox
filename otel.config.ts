@@ -56,5 +56,9 @@ export function registerHoneycombOtel(): void {
       headers: { "x-honeycomb-team": key },
     }),
     traceSampler: dropHealthChecks,
+    // Playwright suites (CI gate, tutorial recordings) send x-witus-origin-test:
+    // playwright-synthetic on every request; surfacing it as a span attribute lets Honeycomb
+    // queries include or exclude synthetic traffic. Absent header = attribute absent = real user.
+    attributesFromHeaders: { "witus.origin_test": "x-witus-origin-test" },
   });
 }
