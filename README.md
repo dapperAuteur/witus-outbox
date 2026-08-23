@@ -68,6 +68,16 @@ secrets, social-platform OAuth tokens, JWTs, connection-string passwords and ema
 redacted out of messages, exception values, breadcrumbs, tags and extras. `lib/sentry-scrub.test.ts`
 asserts the serialized event contains none of them.
 
+`app/global-error.tsx` is the last-resort boundary for a crash in the root layout itself, which
+`error.tsx` cannot catch because the layout is the thing that broke. It renders its own
+`<html>`/`<body>` with inline styles and imports nothing but the Sentry SDK, so a broken component or
+an unloaded stylesheet cannot take the error page down with it.
+
+There is no Content-Security-Policy in this repo (no `headers()` in `next.config.ts`, no CSP in
+`proxy.ts`, no `<meta http-equiv>`), so no `connect-src` has to name the ingest origin. If a CSP is
+ever added it must list the DSN's origin, or the browser silently drops every client-side report and
+the dashboard just looks quiet.
+
 ## Distributed tracing
 
 Traces go to **Honeycomb** over OTLP via `@vercel/otel` (`otel.config.ts`, registered from
