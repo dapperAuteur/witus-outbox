@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { ArrowLeft } from "lucide-react";
 import { getAuthOptions } from "@/lib/auth";
+import { witusEndSessionEndpoint } from "@/lib/env";
 import { DefaultProfilesPanel } from "@/components/DefaultProfilesPanel";
 import { OcoyaWorkspaceFetcher } from "@/components/OcoyaWorkspaceFetcher";
 import { RadaarExportButton } from "@/components/RadaarExportButton";
@@ -32,7 +33,7 @@ export default async function OutboxSetup() {
           <ArrowLeft className="size-4" aria-hidden="true" />
           <span>Back to triage</span>
         </Link>
-        <SignOutButton />
+        <SignOutButton endSessionUrl={witusEndSessionEndpoint()} />
       </header>
 
       <div className="space-y-1">

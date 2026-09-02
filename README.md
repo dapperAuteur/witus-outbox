@@ -102,6 +102,32 @@ critical WCAG A/AA violations** — the gate is strict on purpose; fix the page,
   `witus.origin_test` span attribute — Honeycomb queries (and logs/analytics) can include or
   exclude test traffic. Absent header = attribute absent = real user.
 
+## Sign in with WitUS (ecosystem SSO)
+
+Optional. Set `WITUS_OIDC_CLIENT_ID` / `WITUS_OIDC_CLIENT_SECRET` (plus `NEXT_PUBLIC_WITUS_SSO` to
+reveal the button) and `/auth/sign-in` offers "Sign in with WitUS" alongside the email magic link.
+WitUS sign-ins still pass the `ADMIN_EMAIL` gate in `lib/auth.ts`, so only the admin's WitUS account
+completes the flow.
+
+Two behaviours ride on that config, and **both stay completely dark without `WITUS_OIDC_CLIENT_ID`**:
+
+- **"Continue as &lt;name&gt;".** The sign-in form renders immediately and, in parallel, the page asks
+  `<idp-origin>/api/ecosystem/session` (derived from `WITUS_OIDC_DISCOVERY_URL`, never hardcoded a
+  second time) whether this browser already has a WitUS session. If it does, the button relabels to
+  "Continue as &lt;name&gt;". A blocked, failed or timed-out probe is **invisible** — no error, no
+  spinner, no layout shift — which is the common case on Safari and Firefox, where the IdP cookie is
+  a partitioned third-party cookie. The name is display copy only: clicking still runs the real OIDC
+  code flow, which is the only thing that establishes identity. A one-shot marker
+  (`sessionStorage["witus.sso.attempted"]`, plus a `?sso=tried` query param) is written **before**
+  the redirect so a stale IdP session cannot produce a sign-in loop.
+- **Global sign-out.** With SSO configured, the header button reads "Sign out of WitUS" and signing
+  out of Outbox ends the shared session at `accounts.witus.online` too. The local NextAuth session is
+  destroyed **first**, then the browser is handed to the IdP's `end_session_endpoint` — so an
+  unreachable or refusing IdP still leaves you signed out here. Without SSO configured the button is
+  the plain local "Sign out" it has always been.
+
+Design and reasoning: `lib/silent-sso.ts`. Tests: `lib/silent-sso.test.ts`.
+
 ## Status
 
 **Phase 1 in progress.** Repo bootstrap. See `plans/01-witus-outbox-bootstrap.md` (local-only) for the full approved plan.

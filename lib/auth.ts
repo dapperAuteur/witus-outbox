@@ -6,6 +6,7 @@ import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { getDb } from "@/db";
 import { accounts, sessions, users, verificationTokens } from "@/db/schema";
 import { getEnv } from "@/lib/env";
+import { WITUS_OIDC_DISCOVERY_FALLBACK } from "@/lib/silent-sso";
 
 interface WitusProfile {
   sub: string;
@@ -25,8 +26,7 @@ function witusProvider(): OAuthConfig<WitusProfile> {
     name: "WitUS",
     type: "oauth",
     wellKnown:
-      process.env.WITUS_OIDC_DISCOVERY_URL ??
-      "https://accounts.witus.online/api/idp/.well-known/openid-configuration",
+      process.env.WITUS_OIDC_DISCOVERY_URL ?? WITUS_OIDC_DISCOVERY_FALLBACK,
     clientId: process.env.WITUS_OIDC_CLIENT_ID,
     clientSecret: process.env.WITUS_OIDC_CLIENT_SECRET,
     authorization: { params: { scope: "openid email profile" } },
