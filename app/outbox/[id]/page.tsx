@@ -14,6 +14,7 @@ import { RowProfileOverride } from "@/components/RowProfileOverride";
 import { StatusBadge, type ScheduledPostStatus } from "@/components/StatusBadge";
 import { SignOutButton } from "@/components/SignOutButton";
 import { getAuthOptions } from "@/lib/auth";
+import { witusEndSessionEndpoint } from "@/lib/env";
 import { formatScheduledTime } from "@/lib/format";
 import { platformLabel } from "@/lib/platforms";
 
@@ -110,7 +111,7 @@ export default async function OutboxDetail({
           <ArrowLeft className="size-4" aria-hidden="true" />
           <span>Back to triage</span>
         </Link>
-        <SignOutButton />
+        <SignOutButton endSessionUrl={witusEndSessionEndpoint()} />
       </header>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 sm:p-6 dark:border-slate-800 dark:bg-slate-900 space-y-4">
