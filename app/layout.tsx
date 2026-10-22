@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SiteFooter } from "@/components/SiteFooter";
+import { PostHogProvider } from "@/lib/analytics/posthog-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -45,6 +46,12 @@ export default function RootLayout({
         </a>
         <div className="flex-1">{children}</div>
         <SiteFooter />
+        {/* Env read here in the Server Component and passed down. `?? null` is the
+            supported keyless state: no key → capture stays off, page renders normally. */}
+        <PostHogProvider
+          apiKey={process.env.NEXT_PUBLIC_POSTHOG_KEY ?? null}
+          apiHost="/ingest"
+        />
       </body>
     </html>
   );

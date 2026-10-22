@@ -94,6 +94,27 @@ provider first wins, and Sentry is told to stand down via `skipOpenTelemetrySetu
 - `@vercel/otel` honors incoming W3C `traceparent` headers, so a publish request signed by a
   sending ecosystem app continues here as the same distributed trace.
 
+## Product analytics
+
+Anonymous page-view analytics go to the ecosystem's **shared PostHog project (US region)**, wired
+exactly per witus-online's `lib/analytics/INTEGRATE.md`:
+
+- `lib/analytics/posthog-provider.tsx` and `lib/analytics/capture.ts` are **byte-for-byte copies** of
+  witus-online's files — don't edit them here; the init options are the ecosystem privacy posture.
+  `lib/analytics/events.ts` is this app's own taxonomy (`ANALYTICS_APP = "outbox"`, the identity slug
+  from witus-online `lib/identity/clients.ts`).
+- Privacy posture: `autocapture: false`, session replay disabled, `persistence: "memory"` (no cookie,
+  no localStorage — so no consent banner), no `identify()`. Every event carries `app: "outbox"`.
+  Because identity lives for one page session, treat "users" as "sessions".
+- Ingest is proxied through `/ingest` (rewrite in `next.config.ts` → `https://us.i.posthog.com`), so
+  ad blockers don't drop events. `skipTrailingSlashRedirect: true` is required for that. `proxy.ts`
+  uses explicit-path matchers, so it never touches `/ingest`. No app route may start with `/ingest`.
+- **Inert until the key is set**: `NEXT_PUBLIC_POSTHOG_KEY` (and `NEXT_PUBLIC_POSTHOG_HOST`, set
+  explicitly to `https://us.i.posthog.com`). Redeploy after setting — `NEXT_PUBLIC_*` is build-time.
+- Send events only through `capture()` from `lib/analytics/capture.ts` with a name from `EVENTS`.
+- Drift check (run from a witus-online checkout):
+  `node scripts/check-posthog-conformance.mjs /path/to/witus-outbox`.
+
 ## E2E + accessibility CI
 
 Playwright specs live in `e2e/`; the gate runs in `.github/workflows/e2e.yml` on
