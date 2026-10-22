@@ -2,7 +2,22 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // PostHog's endpoints use trailing slashes; without this Next 308s them before the
+  // /ingest rewrite runs. It disables trailing-slash redirects app-wide, which is
+  // acceptable here: every page is robots noindex (app/layout.tsx), so there are no
+  // public duplicate URLs to canonicalize.
+  skipTrailingSlashRedirect: true,
+
+  // Proxy PostHog ingest through our own origin so ad blockers can't drop events
+  // (witus-online lib/analytics/INTEGRATE.md step 2). The shared project is US. The
+  // /static rule must come first: assets come from a different upstream host. No app
+  // route may begin with /ingest — that prefix belongs to this rewrite.
+  async rewrites() {
+    return [
+      { source: "/ingest/static/:path*", destination: "https://us-assets.i.posthog.com/static/:path*" },
+      { source: "/ingest/:path*", destination: "https://us.i.posthog.com/:path*" },
+    ];
+  },
 };
 
 // Wrap with the Sentry build plugin (the SDK Better Stack ingests). Safe with no Sentry env set:
