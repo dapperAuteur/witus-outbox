@@ -98,11 +98,12 @@ export function witusSilentSsoEndpoint(): string | null {
 }
 
 /**
- * Where sign-out ends the SHARED WitUS session (BAM's decision, 2026-08-30: signing out of one
- * WitUS app signs you out of all of them). `null` when this app is not a configured ecosystem
- * OIDC client — there is no shared session to end and sign-out stays purely local.
+ * Where "Sign out of WitUS everywhere" ends the SHARED WitUS session (BAM, 2026-10-29, witus task
+ * 128 option (b): plain "Sign out" is local-only; the everywhere control is separate). `null` when
+ * this app is not a configured ecosystem OIDC client — there is no shared session to end and the
+ * everywhere control does not render.
  *
- * `client_id` is baked in HERE, on the server, because SignOutButton is a client component and
+ * `client_id` is baked in HERE, on the server, because SignOutEverywhereButton is a client component and
  * must never be handed the raw env. It is REQUIRED, not optional: better-auth's endSession
  * endpoint rejects a `post_logout_redirect_uri` with `invalid_request` unless the request carries
  * a verifiable `id_token_hint` or an explicit `client_id`, and we have no id_token client-side.

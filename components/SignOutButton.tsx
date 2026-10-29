@@ -1,64 +1,99 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { signOut } from "next-auth/react";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { endSessionUrlWithRedirect } from "@/lib/silent-sso";
+import {
+  SIGN_OUT_EVERYWHERE_HELP,
+  SIGN_OUT_EVERYWHERE_LABEL,
+  SIGN_OUT_LABEL,
+  SIGNING_OUT_LABEL,
+  signOutEverywhere,
+  signOutHere,
+  type SignOutEffects,
+} from "@/lib/silent-sso";
 
 /**
- * GLOBAL SIGN-OUT (BAM, 2026-08-30: "signout signs out of every app"). When `endSessionUrl` is
- * present, signing out of Outbox also ends the shared session at accounts.witus.online, so it
- * signs you out of every WitUS app in this browser. The caller resolves the URL on the SERVER
- * (lib/env.ts `witusEndSessionEndpoint`) and passes null when this app is not a configured
- * ecosystem OIDC client, in which case sign-out stays exactly as local as it is today.
+ * Sign-out controls (BAM, 2026-10-29, witus task 128 option (b)).
+ *
+ * - `SignOutButton` ("Sign out") ends ONLY the Outbox session and goes to /auth/sign-in. It never
+ *   navigates to the IdP and its label never changes (shared UI rule: the header Sign out control
+ *   is never renamed or removed).
+ * - `SignOutEverywhereButton` ("Sign out of WitUS everywhere") is a secondary control that also
+ *   ends the shared accounts.witus.online session. It renders only when `endSessionUrl` is
+ *   non-null. The caller resolves that URL on the SERVER (lib/env.ts `witusEndSessionEndpoint`),
+ *   and passes null when this app is not a configured ecosystem OIDC client.
+ * - `SignOutControls` puts the two together for a page header.
  */
-export function SignOutButton({
-  endSessionUrl = null,
-}: { endSessionUrl?: string | null } = {}) {
+
+// `redirect: false` keeps control of the navigation; a full navigation (not a router push)
+// follows, because the everywhere flow leaves this origin for the IdP.
+const browserEffects: SignOutEffects = {
+  endLocalSession: () => signOut({ redirect: false }),
+  navigate: (url) => window.location.assign(url),
+};
+
+export function SignOutButton() {
   const [pending, setPending] = useState(false);
 
   async function onSignOut() {
     setPending(true);
-    if (!endSessionUrl) {
-      await signOut({ callbackUrl: "/auth/sign-in" });
-      return;
-    }
-    // ORDER IS THE SAFETY PROPERTY. Destroy the LOCAL session first (`redirect: false` so we keep
-    // control of the navigation), and only then hand off to the IdP. If the IdP is unreachable or
-    // refuses the logout, the person is still signed out HERE. Handing off first would turn any
-    // IdP failure into "I clicked sign out and I'm still signed in".
-    try {
-      await signOut({ redirect: false });
-    } catch {
-      // A failed local sign-out must not trap someone in a session they asked to leave, and it
-      // must not skip the IdP either — better to end the shared session and let the local one be
-      // re-checked on the next request than to strand the visitor on a dead button.
-    }
-    // Full navigation, not a router push: this leaves our origin for the IdP, which then returns
-    // to `https://outbox.witus.online/` (the post_logout_redirect_uri registered for this client
-    // in gemini/witus lib/identity/clients.ts). They are signed out either way.
-    window.location.assign(
-      endSessionUrlWithRedirect(endSessionUrl, window.location.origin)
-    );
+    await signOutHere(browserEffects);
   }
 
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={pending}
-      onClick={() => void onSignOut()}
-      aria-label={endSessionUrl ? "Sign out of WitUS" : "Sign out"}
-    >
+    <Button variant="ghost" size="sm" disabled={pending} onClick={() => void onSignOut()}>
       <LogOut className="size-4" aria-hidden="true" />
-      <span>
-        {pending
-          ? "Signing out…"
-          : endSessionUrl
-            ? "Sign out of WitUS"
-            : "Sign out"}
-      </span>
+      <span>{pending ? SIGNING_OUT_LABEL : SIGN_OUT_LABEL}</span>
     </Button>
+  );
+}
+
+export function SignOutEverywhereButton({
+  endSessionUrl = null,
+}: { endSessionUrl?: string | null } = {}) {
+  const [pending, setPending] = useState(false);
+  const helpId = useId();
+
+  if (!endSessionUrl) return null;
+  const url = endSessionUrl;
+
+  async function onSignOut() {
+    setPending(true);
+    // ORDER IS THE SAFETY PROPERTY: signOutEverywhere destroys the LOCAL session first, then
+    // hands off to the IdP, which returns to `https://outbox.witus.online/` (the
+    // post_logout_redirect_uri registered for this client in gemini/witus
+    // lib/identity/clients.ts). See lib/silent-sso.ts.
+    await signOutEverywhere(url, window.location.origin, browserEffects);
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1 text-right">
+      <Button
+        variant="secondary"
+        size="sm"
+        aria-describedby={helpId}
+        disabled={pending}
+        onClick={() => void onSignOut()}
+      >
+        {pending ? SIGNING_OUT_LABEL : SIGN_OUT_EVERYWHERE_LABEL}
+      </Button>
+      <p id={helpId} className="max-w-xs text-xs text-slate-600 dark:text-slate-400">
+        {SIGN_OUT_EVERYWHERE_HELP}
+      </p>
+    </div>
+  );
+}
+
+/** "Sign out" with "Sign out of WitUS everywhere" under it (only when configured). */
+export function SignOutControls({
+  endSessionUrl = null,
+}: { endSessionUrl?: string | null } = {}) {
+  return (
+    <div className="flex flex-col items-end gap-2">
+      <SignOutButton />
+      <SignOutEverywhereButton endSessionUrl={endSessionUrl} />
+    </div>
   );
 }

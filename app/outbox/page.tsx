@@ -8,7 +8,7 @@ import { scheduledPosts } from "@/db/schema";
 import { getAuthOptions } from "@/lib/auth";
 import { witusEndSessionEndpoint } from "@/lib/env";
 import { parseTriageFilters } from "@/lib/triage-query";
-import { SignOutButton } from "@/components/SignOutButton";
+import { SignOutControls } from "@/components/SignOutButton";
 import { TriageList, type TriageRow } from "@/components/TriageList";
 import type { ScheduledPostStatus } from "@/components/StatusBadge";
 
@@ -123,7 +123,7 @@ export default async function OutboxList({
             <Settings className="size-4" aria-hidden="true" />
             <span>Setup</span>
           </Link>
-          <SignOutButton endSessionUrl={witusEndSessionEndpoint()} />
+          <SignOutControls endSessionUrl={witusEndSessionEndpoint()} />
         </div>
       </header>
 

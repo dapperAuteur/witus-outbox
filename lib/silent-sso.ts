@@ -1,6 +1,6 @@
 /**
  * "Continue as <name>" — the silent ecosystem-SSO check behind the WitUS button on
- * `/auth/sign-in`, plus the URL derivations global sign-out needs.
+ * `/auth/sign-in`, plus the two sign-out flows ("Sign out" and "Sign out of WitUS everywhere").
  *
  * BAM chose this shape on 2026-08-30: render the sign-in form immediately exactly as it renders
  * today, ask the IdP who this browser is IN PARALLEL, and if an answer arrives relabel the
@@ -128,9 +128,10 @@ function splitDiscoveryUrl(
  * The IdP's RP-initiated logout endpoint, `<basePath>/oauth2/endsession` — the
  * `end_session_endpoint` the live discovery document advertises.
  *
- * BAM chose GLOBAL sign-out on 2026-08-30: "signout signs out of every app". Ending only the
- * local session leaves the IdP session alive, which once "Continue as <name>" is live means
- * signing out and coming back offers to sign you straight back in — a logout that reads as broken.
+ * Used ONLY by the separate "Sign out of WitUS everywhere" control (BAM, 2026-10-29, witus task
+ * 128 option (b)). Plain "Sign out" ends this app's session alone and never comes here; the
+ * 2026-08-30 behaviour, where the one button always ended the WitUS session too, surprised BAM
+ * because every other app kept its own session.
  */
 export function endSessionEndpointFromDiscovery(
   discoveryUrl: string | null | undefined
@@ -207,4 +208,60 @@ export function endSessionUrlWithRedirect(
   const back = `${appOrigin.replace(/\/+$/, "")}/`;
   const separator = endSessionUrl.includes("?") ? "&" : "?";
   return `${endSessionUrl}${separator}post_logout_redirect_uri=${encodeURIComponent(back)}`;
+}
+
+// ── Sign-out (BAM, 2026-10-29, witus task 128 option (b)) ────────────────────────────────────
+
+/** Where plain "Sign out" lands. Every page under /outbox is gated. */
+export const LOCAL_SIGN_OUT_DESTINATION = "/auth/sign-in";
+
+/** Exact accessible names and help text. Pinned by lib/silent-sso.test.ts. */
+export const SIGN_OUT_LABEL = "Sign out";
+export const SIGN_OUT_EVERYWHERE_LABEL = "Sign out of WitUS everywhere";
+export const SIGN_OUT_EVERYWHERE_HELP =
+  "Also signs you out of WitUS. Other WitUS apps you are signed in to stay signed in until you sign out of them.";
+export const SIGNING_OUT_LABEL = "Signing out…";
+
+/** Side effects the sign-out flows need, injected so tests can observe their order. */
+export type SignOutEffects = {
+  /** Ends this app's NextAuth session WITHOUT navigating (`signOut({ redirect: false })`). */
+  endLocalSession: () => Promise<unknown>;
+  /** A full navigation (`window.location.assign` in the browser). */
+  navigate: (url: string) => void;
+};
+
+async function endLocalSessionQuietly(effects: SignOutEffects): Promise<void> {
+  try {
+    await effects.endLocalSession();
+  } catch {
+    // A failed local sign-out must not trap someone in a session they asked to leave. The
+    // navigation that follows still happens, and the session is re-checked on the next request.
+  }
+}
+
+/**
+ * Plain "Sign out": ends ONLY this app's session, then goes to the local sign-in page. It NEVER
+ * navigates to the IdP, even when an end-session URL is configured; the WitUS session and every
+ * other app's session stay alive.
+ */
+export async function signOutHere(effects: SignOutEffects): Promise<void> {
+  await endLocalSessionQuietly(effects);
+  effects.navigate(LOCAL_SIGN_OUT_DESTINATION);
+}
+
+/**
+ * "Sign out of WitUS everywhere": ends this app's session, then hands the browser to the IdP's
+ * endsession endpoint, which ends the WitUS session and returns to `<origin>/`.
+ *
+ * ORDER IS THE SAFETY PROPERTY. Destroy the LOCAL session first, and only then hand off to the
+ * IdP. If the IdP is unreachable or refuses the logout, the person is still signed out HERE.
+ * Handing off first would turn any IdP failure into "I clicked sign out and I'm still signed in".
+ */
+export async function signOutEverywhere(
+  endSessionUrl: string,
+  appOrigin: string,
+  effects: SignOutEffects
+): Promise<void> {
+  await endLocalSessionQuietly(effects);
+  effects.navigate(endSessionUrlWithRedirect(endSessionUrl, appOrigin));
 }

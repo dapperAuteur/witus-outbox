@@ -8,7 +8,7 @@ import { DefaultProfilesPanel } from "@/components/DefaultProfilesPanel";
 import { OcoyaWorkspaceFetcher } from "@/components/OcoyaWorkspaceFetcher";
 import { RadaarExportButton } from "@/components/RadaarExportButton";
 import { SetupTabs } from "@/components/SetupTabs";
-import { SignOutButton } from "@/components/SignOutButton";
+import { SignOutControls } from "@/components/SignOutButton";
 import { SocialChampExportButton } from "@/components/SocialChampExportButton";
 import { SyncProfilesButton } from "@/components/SyncProfilesButton";
 
@@ -33,7 +33,7 @@ export default async function OutboxSetup() {
           <ArrowLeft className="size-4" aria-hidden="true" />
           <span>Back to triage</span>
         </Link>
-        <SignOutButton endSessionUrl={witusEndSessionEndpoint()} />
+        <SignOutControls endSessionUrl={witusEndSessionEndpoint()} />
       </header>
 
       <div className="space-y-1">

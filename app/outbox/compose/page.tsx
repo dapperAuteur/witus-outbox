@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { getAuthOptions } from "@/lib/auth";
 import { witusEndSessionEndpoint } from "@/lib/env";
 import { Composer } from "@/components/Composer";
-import { SignOutButton } from "@/components/SignOutButton";
+import { SignOutControls } from "@/components/SignOutButton";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +32,7 @@ export default async function ComposePage() {
           <ArrowLeft className="size-4" aria-hidden="true" />
           <span>Back to triage</span>
         </Link>
-        <SignOutButton endSessionUrl={witusEndSessionEndpoint()} />
+        <SignOutControls endSessionUrl={witusEndSessionEndpoint()} />
       </header>
 
       <div className="space-y-1">

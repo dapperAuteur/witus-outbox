@@ -164,11 +164,14 @@ Two more behaviours ride on that config, and **both stay completely dark without
   code flow, which is the only thing that establishes identity. A one-shot marker
   (`sessionStorage["witus.sso.attempted"]`, plus a `?sso=tried` query param) is written **before**
   the redirect so a stale IdP session cannot produce a sign-in loop.
-- **Global sign-out.** With SSO configured, the header button reads "Sign out of WitUS" and signing
-  out of Outbox ends the shared session at `accounts.witus.online` too. The local NextAuth session is
-  destroyed **first**, then the browser is handed to the IdP's `end_session_endpoint` — so an
-  unreachable or refusing IdP still leaves you signed out here. Without SSO configured the button is
-  the plain local "Sign out" it has always been.
+- **Sign out, or sign out of WitUS everywhere** (BAM, 2026-10-29, witus task 128 option (b)). The
+  header's **Sign out** ends only the Outbox session and goes to `/auth/sign-in`; your WitUS session
+  and every other WitUS app stay signed in. With SSO configured, a second, secondary control,
+  **Sign out of WitUS everywhere**, also ends the shared session at `accounts.witus.online`; its help
+  text says other WitUS apps stay signed in until you sign out of them. That control destroys the
+  local NextAuth session **first**, then hands the browser to the IdP's `end_session_endpoint`, so an
+  unreachable or refusing IdP still leaves you signed out here. Without SSO configured only
+  **Sign out** shows.
 
 Design and reasoning: `lib/silent-sso.ts`. Tests: `lib/silent-sso.test.ts`.
 
