@@ -135,12 +135,25 @@ critical WCAG A/AA violations** — the gate is strict on purpose; fix the page,
 
 ## Sign in with WitUS (ecosystem SSO)
 
-Optional. Set `WITUS_OIDC_CLIENT_ID` / `WITUS_OIDC_CLIENT_SECRET` (plus `NEXT_PUBLIC_WITUS_SSO` to
-reveal the button) and `/auth/sign-in` offers "Sign in with WitUS" alongside the email magic link.
-WitUS sign-ins still pass the `ADMIN_EMAIL` gate in `lib/auth.ts`, so only the admin's WitUS account
-completes the flow.
+Optional. Set `WITUS_OIDC_CLIENT_ID` (`witus-outbox`) and `WITUS_OIDC_CLIENT_SECRET` (equal to
+`WITUS_OIDC_SECRET__OUTBOX` on the witus.online IdP) and `/auth/sign-in` offers "Sign in with WitUS"
+alongside the email magic link. Both are read at request time on the server, so setting them and
+redeploying is enough; there is no separate client-side flag (the old `NEXT_PUBLIC_WITUS_SSO` is no
+longer read). The client is registered in the witus repo's `lib/identity/clients.ts` (slug `outbox`)
+with the redirect URI `https://outbox.witus.online/api/auth/callback/witus`.
 
-Two behaviours ride on that config, and **both stay completely dark without `WITUS_OIDC_CLIENT_ID`**:
+- **Admin gate.** WitUS sign-ins pass the same `ADMIN_EMAIL` gate as the magic link
+  (`lib/auth-gate.ts`), and additionally need the IdP's `email_verified` claim to be `true`.
+- **Account linking.** If the admin first signed in by email, the first WitUS sign-in attaches to
+  that same user instead of failing with "That account is not linked". This is safe only because
+  of the `email_verified` check, which NextAuth runs before it links.
+- **EdDSA ID tokens.** The IdP signs ID tokens with EdDSA only, so the provider sets
+  `id_token_signed_response_alg: "EdDSA"` (openid-client defaults to RS256 and would fail at the
+  callback).
+- **Errors.** A failed sign-in returns to `/auth/sign-in?error=<code>` with a notice
+  (`lib/auth-error.ts`) instead of NextAuth's bare error page.
+
+Two more behaviours ride on that config, and **both stay completely dark without it**:
 
 - **"Continue as &lt;name&gt;".** The sign-in form renders immediately and, in parallel, the page asks
   `<idp-origin>/api/ecosystem/session` (derived from `WITUS_OIDC_DISCOVERY_URL`, never hardcoded a

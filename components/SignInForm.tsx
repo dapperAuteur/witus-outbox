@@ -5,6 +5,7 @@ import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { WitusSsoButton } from "@/components/WitusSsoButton";
+import type { AuthErrorNotice } from "@/lib/auth-error";
 
 /**
  * The sign-in surface. Client component because the email form owns its own state; the page that
@@ -12,10 +13,16 @@ import { WitusSsoButton } from "@/components/WitusSsoButton";
  * `silentCheckUrl` from server env, since a client component must never read it.
  */
 export function SignInForm({
+  witusEnabled,
   silentCheckUrl,
+  notice = null,
 }: {
+  /** Server-resolved: true when the `witus` provider is registered and the flow can complete. */
+  witusEnabled: boolean;
   /** IdP session endpoint for the "Continue as <name>" probe, or null when not configured. */
   silentCheckUrl: string | null;
+  /** Why the last sign-in failed, from the `?error=` code; null on a normal visit. */
+  notice?: AuthErrorNotice | null;
 }) {
   const [email, setEmail] = useState("");
   const [pending, setPending] = useState(false);
@@ -66,6 +73,20 @@ export function SignInForm({
           </p>
         </header>
 
+        {notice ? (
+          <section
+            role="alert"
+            className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-700 dark:bg-amber-950"
+          >
+            <p className="font-semibold text-slate-900 dark:text-slate-100">
+              {notice.title}
+            </p>
+            <p className="mt-1 text-slate-700 dark:text-slate-300">
+              {notice.body}
+            </p>
+          </section>
+        ) : null}
+
         <form onSubmit={onSubmit} noValidate className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="email" className="block text-sm font-medium">
@@ -105,7 +126,7 @@ export function SignInForm({
           </Button>
         </form>
 
-        {process.env.NEXT_PUBLIC_WITUS_SSO ? (
+        {witusEnabled ? (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />

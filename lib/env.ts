@@ -68,6 +68,19 @@ export function getEnv(): Env {
 }
 
 /**
+ * True when "Sign in with WitUS" can actually complete: both the client id and its secret are set.
+ * This one runtime check gates the `witus` NextAuth provider (lib/auth.ts), the button on
+ * /auth/sign-in, the silent probe and global sign-out. It replaced a build-time
+ * `NEXT_PUBLIC_WITUS_SSO` flag (2026-10-29): with that flag unset the button never rendered even
+ * on a fully configured deployment, which is how BAM came to report "outbox doesn't have a sign in
+ * with WitUS button". A runtime server-side check also means setting the env and redeploying is
+ * enough; there is no second, client-visible switch to forget.
+ */
+export function isWitusOidcConfigured(): boolean {
+  return Boolean(process.env.WITUS_OIDC_CLIENT_ID && process.env.WITUS_OIDC_CLIENT_SECRET);
+}
+
+/**
  * Where the sign-in page's silent "Continue as <name>" check asks the WitUS IdP who this browser
  * is. `null` — the feature stays completely dark — unless this app is a configured ecosystem OIDC
  * client, because an affordance the visitor cannot complete is worse than no affordance.
@@ -78,7 +91,7 @@ export function getEnv(): Env {
  * lib/silent-sso.ts for the whole design.
  */
 export function witusSilentSsoEndpoint(): string | null {
-  if (!process.env.WITUS_OIDC_CLIENT_ID) return null;
+  if (!isWitusOidcConfigured()) return null;
   return silentSsoEndpointFromDiscovery(
     process.env.WITUS_OIDC_DISCOVERY_URL ?? WITUS_OIDC_DISCOVERY_FALLBACK
   );
@@ -96,7 +109,7 @@ export function witusSilentSsoEndpoint(): string | null {
  */
 export function witusEndSessionEndpoint(): string | null {
   const clientId = process.env.WITUS_OIDC_CLIENT_ID;
-  if (!clientId) return null;
+  if (!clientId || !isWitusOidcConfigured()) return null;
   const base = endSessionEndpointFromDiscovery(
     process.env.WITUS_OIDC_DISCOVERY_URL ?? WITUS_OIDC_DISCOVERY_FALLBACK
   );

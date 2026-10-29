@@ -23,8 +23,8 @@ import {
  *
  * `silentCheckUrl` is resolved on the SERVER (lib/env.ts `witusSilentSsoEndpoint`) and is null
  * unless `WITUS_OIDC_CLIENT_ID` is set, so the probe never fires on an app that could not finish
- * the flow. Button visibility keeps the repo's existing `NEXT_PUBLIC_WITUS_SSO` gate, applied by
- * the caller (components/SignInForm.tsx).
+ * the flow. Button visibility is the same server-side check (`isWitusOidcConfigured()`), resolved
+ * in app/auth/sign-in/page.tsx and applied by the caller (components/SignInForm.tsx).
  */
 export function WitusSsoButton({
   silentCheckUrl,
