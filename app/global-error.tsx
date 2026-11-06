@@ -42,6 +42,16 @@ export default function GlobalError({
           <p style={{ color: "#71717a", fontSize: 14 }}>
             WitUS Outbox hit an unexpected error. Queued sends are unaffected.
           </p>
+          {/* The root layout and its header failed, so this minimal shell carries its own links. */}
+          <p style={{ margin: "12px 0", fontSize: 14 }}>
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a href="/" style={{ color: "inherit", marginRight: 16 }}>
+              Go home
+            </a>
+            <a href="/auth/sign-in" style={{ color: "inherit" }}>
+              Sign in
+            </a>
+          </p>
           <button
             type="button"
             onClick={reset}

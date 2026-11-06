@@ -22,3 +22,13 @@ test("@smoke anonymous visit serves the sign-in page", async ({ page }) => {
   await expect(page).toHaveURL(/\/auth\/sign-in/);
   await expect(page.locator("h1").first()).toBeVisible();
 });
+
+// Error pages keep the app shell (witus docs/shared-ui-ux-dx.md): a missing path answers 404 and
+// still renders the header's Sign in control and the footer, so the visitor is never stranded.
+test("@smoke not-found page keeps the header and footer", async ({ page }) => {
+  const res = await page.goto("/this-page-does-not-exist-smoke");
+  expect(res?.status()).toBe(404);
+  await expect(page.locator("h1")).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "Sign in", exact: true }).first()).toBeVisible();
+  await expect(page.locator("footer").first()).toBeVisible();
+});
