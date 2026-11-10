@@ -29,6 +29,16 @@ test("@smoke not-found page keeps the header and footer", async ({ page }) => {
   const res = await page.goto("/this-page-does-not-exist-smoke");
   expect(res?.status()).toBe(404);
   await expect(page.locator("h1")).toHaveCount(1);
-  await expect(page.getByRole("link", { name: "Sign in", exact: true }).first()).toBeVisible();
+  // The Sign in control has to be in the header itself, not only in the footer's link list.
+  const header = page.locator("header").first();
+  await expect(header).toBeVisible();
+  await expect(header.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
   await expect(page.locator("footer").first()).toBeVisible();
+});
+
+test("@smoke sign-in page has the header with its Sign in control", async ({ page }) => {
+  await page.goto("/auth/sign-in");
+  const header = page.locator("header").first();
+  await expect(header).toBeVisible();
+  await expect(header.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
 });
