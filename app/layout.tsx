@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SiteFooter } from "@/components/SiteFooter";
+import { SiteHeader } from "@/components/SiteHeader";
 import { PostHogProvider } from "@/lib/analytics/posthog-provider";
 import "./globals.css";
 
@@ -44,6 +45,7 @@ export default function RootLayout({
         >
           Skip to content
         </a>
+        <SiteHeader />
         <div className="flex-1">{children}</div>
         <SiteFooter />
         {/* Env read here in the Server Component and passed down. `?? null` is the
