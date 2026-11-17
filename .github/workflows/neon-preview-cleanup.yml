@@ -13,6 +13,12 @@
 # `preview/<branch>` Neon branch whose git branch is merged into the default branch or no longer
 # exists. A branch with unmerged commits keeps its database. Neon's default and protected branches
 # are never touched. Needs the repo variable NEON_PROJECT_ID and the secret NEON_API_KEY (witus task 105).
+#
+# v3 (2026-11-16) skips pull-request events raised by Dependabot. GitHub runs those with no repository
+# secrets (only Dependabot secrets), so NEON_API_KEY was empty and the guard below failed on every
+# Dependabot PR close even in repos that had both values set (seen on witus-learn, PR #29). Nothing is
+# lost: the push to main that closed the PR, the branch deletion and the daily schedule sweep the same
+# branch.
 name: Cleanup Neon preview branches
 
 on:
@@ -34,6 +40,8 @@ concurrency:
 
 jobs:
   sweep:
+    # Dependabot's pull_request runs carry no repository secrets; see the header.
+    if: github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
